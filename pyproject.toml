@@ -1,0 +1,242 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "oi"
+version = "1.0.6"
+description = "Smarter self-hosted AI assistant for multiple users and agents, built on oi-harness"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+authors = [{name = "akankofik-dev"}]
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    # pydantic capped below 2.14 due to potential breaking changes in pydantic-settings 2.14+;
+    # raise after verifying oi-harness/oi-memory compatibility with newer versions
+    "pydantic>=2.6,<2.14",
+    "langchain-core>=1.4.8,<2",
+    "click>=8.1",
+    "rich>=13.7",
+    "questionary>=2.0",
+    "apscheduler>=3.10,<4",
+    "argon2-cffi>=23.1",
+    "pyjwt>=2.8",
+    "lark-oapi>=1.7.3",
+    "cryptography>=41",
+    "scalar-fastapi>=1.0",
+    "edge-tts>=6.1",
+    "segno>=1.6",
+    "websockets>=13.0",
+    "acme>=5.6.0",
+    "josepy>=2.2.0",
+    # Pin aiobotocore/botocore selaras dengan boto3 untuk mencegah pip resolver hang
+    # (pernah hang di "looking at multiple versions of aiobotocore[boto3]").
+    # Kombinasi terverifikasi: boto3 1.40.61 + botocore 1.40.61 + aiobotocore 2.25.1.
+    "boto3>=1.40.61,<1.41",
+    "botocore>=1.40.61,<1.41",
+    "aiobotocore>=2.25.1,<2.26",
+    "playwright>=1.40",
+    "psycopg[binary]>=3.2",
+    "langgraph-checkpoint-postgres>=2.0",
+    "mcp>=1.9,<2",
+    "pillow>=10.0",
+    "pypdf>=5.0",
+    "python-docx>=1.2.0",
+    "python-pptx>=1.0",
+    "pypinyin>=0.53",
+    "openpyxl>=3.1",
+    "xlrd>=2.0.1",
+    "ldap3>=2.9.1",
+    # Remote Desktop adalah requirement proyek: mss/pynput wajib terinstal
+    # (sebelumnya hanya di extra [desktop], user kena ModuleNotFoundError saat runtime).
+    "mss>=9.0",
+    "pynput>=1.7",
+]
+
+[project.urls]
+Homepage = "https://github.com/akankofik-dev/Oi"
+Repository = "https://github.com/akankofik-dev/Oi"
+Issues = "https://github.com/akankofik-dev/Oi/issues"
+Changelog = "https://github.com/akankofik-dev/Oi/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+# PEP 621 extras — kept so `pip install -e ".[dev]"` keeps working for
+# legacy / CI flows. `uv sync` reads `[dependency-groups].dev` below.
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "pytest-testmon>=2.0",
+    "pytest-xdist>=3.6",
+    "httpx>=0.27",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "build>=1.0",
+    "xlwt>=1.3",
+]
+# Kept for backward compatibility; playwright is now a core dependency.
+browser = [
+    "playwright>=1.40",
+]
+# Kept for backward compatibility; mss/pynput are now core dependencies
+# (Remote Desktop is a project requirement). `pip install oi[desktop]` still works.
+desktop = ["mss>=9.0", "pynput>=1.7"]
+# Local ONNX / fastembed embedding models (Models admin local tab).
+local-embedding = ["fastembed>=0.4", "huggingface_hub>=0.20"]
+knowledge-ocr = [
+    "rapidocr>=3.4,<4",
+    "onnxruntime>=1.17",
+    "pymupdf>=1.24",
+]
+
+[dependency-groups]
+# PEP 735 dev group — installed by default on `uv sync`. Mirrors the
+# `[project.optional-dependencies].dev` list above.
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "pytest-testmon>=2.0",
+    "pytest-xdist>=3.6",
+    "httpx>=0.27",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "build>=1.0",
+    "xlwt>=1.3",
+]
+
+[project.scripts]
+oi = "oi.cli.main:cli"
+
+# ── Non-PyPI dependencies ─────────────────────────────────────────────────────
+# These four are not published on PyPI; each lives in its own repository and is
+# pinned by tag so a fresh clone resolves the same build every time. Bump a tag
+# in that repo first, then update it here. See docs/installation-audit-issues.md.
+[tool.uv.sources]
+oi-harness = { git = "https://github.com/akankofik-dev/oi-harness.git", tag = "v1.0.1" }
+oi-gateway = { git = "https://github.com/akankofik-dev/oi-gateway.git", tag = "v1.0.0" }
+oi-memory = { git = "https://github.com/akankofik-dev/oi-memory.git", tag = "v1.0.0" }
+oi-browser = { git = "https://github.com/akankofik-dev/oi-browser.git", tag = "v1.0.1" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/oi"]
+
+[tool.hatch.build]
+include = [
+    "src/oi/**/*.py",
+    "src/oi/**/*.json",
+    "src/oi/**/*.md",
+    "src/oi/**/*.sql",
+    "src/oi/**/*.sh",
+    "src/oi/**/*.png",
+    "src/oi/dashboard/**/*",
+    "src/oi/infra/agents/experts/library/**/*",
+    "src/oi/infra/agents/plugins/bundled/**/*",
+    "src/oi/infra/agents/subagents/library/**/*",
+    "src/oi/infra/agents/subagents/divisions.json",
+    "src/oi/infra/desktop/scripts/**/*",
+]
+artifacts = [
+    "src/oi/dashboard/**/*",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+include = ["*.py", "*.pyi", "*.pyw", "*.ipynb", "**/pyproject.toml", "**/ruff.toml", "**/.ruff.toml"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]
+"src/oi/api/**" = ["B008"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+files = ["src/oi"]
+exclude = [
+    "src/oi/dashboard/",
+    "src/oi/infra/agents/experts/library/",
+    "src/oi/infra/agents/plugins/bundled/",
+    "src/oi/infra/agents/subagents/library/",
+]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "oi.api.routers.auth"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "oi.api.routers.health"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "oi.api.routers.setup"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "oi.api.routers.users"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "oi.api.routers.agents"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "oi.api.routers.providers"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "oi.api.routers.chat"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "oi.api.routers.channels"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "oi.api.routers.cron"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "oi.api.routers.admin"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "oi.api.app"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "oi.infra.utils.posix_compat"
+disable_error_code = ["attr-defined"]
+
+[[tool.mypy.overrides]]
+module = "oi.infra.utils.subprocess_io_win"
+disable_error_code = ["attr-defined"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "live: tests that hit real LLM / external services (skipped by default)",
+    "slow: expensive tests (integration boot, real harness, browser); skipped by make test-fast",
+    "postgresql: tests that need a live PostgreSQL (set OI_TEST_DATABASE_URL)",
+]
+# The project pins a starlette fork (1.3.1) whose TestClient prefers a
+# private ``httpx2`` build that is not installable from PyPI. When ``httpx2``
+# is absent it falls back to ``httpx`` and emits a non-actionable
+# StarletteDeprecationWarning on every ``starlette.testclient`` import. The
+# fallback is intentional for this environment, so silence the noise.
+filterwarnings = [
+    "ignore::starlette.exceptions.StarletteDeprecationWarning",
+]

@@ -1,0 +1,1 @@
+import{m as message,a as apiErrorMessage}from"./index.BuoACcAy.js";function pickLocale(node,_locale,_options){return node&&node.en||""}function showApiError(error,fallback,t){message.error(apiErrorMessage(error,fallback,t))}export{pickLocale as p,showApiError as s};
