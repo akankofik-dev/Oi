@@ -38,6 +38,7 @@ class ProactiveCareConfigBody(BaseModel):
         """Validate the HH:MM format."""
         parts = v.split(":")
         if len(parts) != 2:
+<<<<<<< HEAD
             raise ValueError(f"时间格式必须为 HH:MM，收到: {v!r}")
         try:
             h, m = int(parts[0]), int(parts[1])
@@ -45,6 +46,15 @@ class ProactiveCareConfigBody(BaseModel):
             raise ValueError(f"时间格式必须为 HH:MM，收到: {v!r}") from None
         if not (0 <= h <= 23 and 0 <= m <= 59):
             raise ValueError(f"时间超出范围: {v!r}")
+=======
+            raise ValueError(f"Format waktu harus HH:MM, diterima: {v!r}")
+        try:
+            h, m = int(parts[0]), int(parts[1])
+        except ValueError:
+            raise ValueError(f"Format waktu harus HH:MM, diterima: {v!r}") from None
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            raise ValueError(f"Waktu di luar rentang: {v!r}")
+>>>>>>> 29e22aa (Oi v1.0.6)
         return v
 
     @model_validator(mode="after")
@@ -56,7 +66,11 @@ class ProactiveCareConfigBody(BaseModel):
         end_t = _parse_hhmm(self.active_hours_end)
         if start_t >= end_t:
             raise ValueError(
+<<<<<<< HEAD
                 f"active_hours_start ({self.active_hours_start}) 必须早于 "
+=======
+                f"active_hours_start ({self.active_hours_start}) harus lebih awal dari "
+>>>>>>> 29e22aa (Oi v1.0.6)
                 f"active_hours_end ({self.active_hours_end})"
             )
         return self
@@ -65,10 +79,17 @@ class ProactiveCareConfigBody(BaseModel):
     def validate_interval(self) -> ProactiveCareConfigBody:
         """Validate the push interval: min <= max and min >= 1."""
         if self.min_interval_hours < 1:
+<<<<<<< HEAD
             raise ValueError("min_interval_hours 不能小于 1 小时（防止频繁打扰）")
         if self.min_interval_hours > self.max_interval_hours:
             raise ValueError(
                 f"min_interval_hours ({self.min_interval_hours}) 不能大于 "
+=======
+            raise ValueError("min_interval_hours tidak boleh kurang dari 1 jam (mencegah gangguan berlebih)")
+        if self.min_interval_hours > self.max_interval_hours:
+            raise ValueError(
+                f"min_interval_hours ({self.min_interval_hours}) tidak boleh lebih besar dari "
+>>>>>>> 29e22aa (Oi v1.0.6)
                 f"max_interval_hours ({self.max_interval_hours})"
             )
         return self

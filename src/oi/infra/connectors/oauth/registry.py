@@ -113,7 +113,11 @@ async def exchange_pasted_auth_code(
     del settings_repo, extra
     code = code.strip()
     if not code:
+<<<<<<< HEAD
         raise ValueError("授权码不能为空")
+=======
+        raise ValueError("Kode otorisasi tidak boleh kosong")
+>>>>>>> 29e22aa (Oi v1.0.6)
 
     if kind in _AUTH_CODE_PASSTHROUGH_KINDS:
         return {"cookie": code}

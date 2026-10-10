@@ -83,11 +83,19 @@ def _refuse_postgres_portable(server: Any, agent_id: str) -> None:
 
 
 class _AdoptRequest(BaseModel):
+<<<<<<< HEAD
     target_host: str = Field(description="目标宿主：agent / openclaw / hermes，可带 namespace")
     target_namespace: str | None = Field(default=None, description="目标 namespace（可选）")
     on_conflict: str = Field(default="skip", description="冲突策略：skip / replace / raise")
     host_rewrite: str = Field(default="keep", description="host 重写策略：keep / target")
     dry_run: bool = Field(default=False, description="仅预检，不实际写入")
+=======
+    target_host: str = Field(description="Host target: agent / openclaw / hermes, dapat menyertakan namespace")
+    target_namespace: str | None = Field(default=None, description="Namespace target (opsional)")
+    on_conflict: str = Field(default="skip", description="Strategi konflik: skip / replace / raise")
+    host_rewrite: str = Field(default="keep", description="Strategi penulisan ulang host: keep / target")
+    dry_run: bool = Field(default=False, description="Hanya pra-periksa, tidak benar-benar menulis")
+>>>>>>> 29e22aa (Oi v1.0.6)
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +116,11 @@ async def list_portable_sources(
         return JSONResponse(content={"sources": [s.to_dict() for s in sources]})
     except ImportError:
         raise OiError(
+<<<<<<< HEAD
             ErrorCode.INTERNAL_ERROR, "oi-memory 未安装，无法使用记忆迁移功能"
+=======
+            ErrorCode.INTERNAL_ERROR, "oi-memory belum terpasang, fitur migrasi memori tidak dapat digunakan"
+>>>>>>> 29e22aa (Oi v1.0.6)
         ) from None
     except Exception as exc:
         logger.exception("list_portable_sources failed")
@@ -182,7 +194,11 @@ async def pack_agent_memory(
         )
 
     except ImportError:
+<<<<<<< HEAD
         raise OiError(ErrorCode.INTERNAL_ERROR, "oi-memory 未安装") from None
+=======
+        raise OiError(ErrorCode.INTERNAL_ERROR, "oi-memory belum terpasang") from None
+>>>>>>> 29e22aa (Oi v1.0.6)
     except ValueError as exc:
         raise OiError(ErrorCode.INTERNAL_ERROR, str(exc), status=400) from exc
     except Exception as exc:
@@ -198,8 +214,13 @@ async def pack_agent_memory(
 @router.post("/agents/{agent_id}/memory/portable/adopt")
 async def adopt_agent_memory(
     agent_id: str,
+<<<<<<< HEAD
     pkg_file: UploadFile = File(..., description=".hmpkg 文件"),
     target_host: str = Form(default="agent", description="目标宿主"),
+=======
+    pkg_file: UploadFile = File(..., description="Berkas .hmpkg"),
+    target_host: str = Form(default="agent", description="Host target"),
+>>>>>>> 29e22aa (Oi v1.0.6)
     target_namespace: str | None = Form(default=None),
     on_conflict: str = Form(default="skip"),
     host_rewrite: str = Form(default="keep"),
@@ -237,7 +258,11 @@ async def adopt_agent_memory(
         return JSONResponse(content=summary.to_dict())
 
     except ImportError:
+<<<<<<< HEAD
         raise OiError(ErrorCode.INTERNAL_ERROR, "oi-memory 未安装") from None
+=======
+        raise OiError(ErrorCode.INTERNAL_ERROR, "oi-memory belum terpasang") from None
+>>>>>>> 29e22aa (Oi v1.0.6)
     except ValueError as exc:
         raise OiError(ErrorCode.INTERNAL_ERROR, str(exc), status=400) from exc
     except Exception as exc:
@@ -253,8 +278,13 @@ async def adopt_agent_memory(
 @router.post("/agents/{agent_id}/memory/portable/doctor")
 async def doctor_agent_memory(
     agent_id: str,
+<<<<<<< HEAD
     host_spec: str = Form(default="agent", description="目标宿主，格式：host 或 host:namespace"),
     compare_pkg: UploadFile | None = File(default=None, description="可选的 .hmpkg 文件用于比对"),
+=======
+    host_spec: str = Form(default="agent", description="Host target, format: host atau host:namespace"),
+    compare_pkg: UploadFile | None = File(default=None, description="Berkas .hmpkg opsional untuk perbandingan"),
+>>>>>>> 29e22aa (Oi v1.0.6)
     user: Any = Depends(current_user),
     server: Any = Depends(get_server),
     as_user: int | None = Query(default=None),
@@ -294,7 +324,11 @@ async def doctor_agent_memory(
         return JSONResponse(content=report.to_dict())
 
     except ImportError:
+<<<<<<< HEAD
         raise OiError(ErrorCode.INTERNAL_ERROR, "oi-memory 未安装") from None
+=======
+        raise OiError(ErrorCode.INTERNAL_ERROR, "oi-memory belum terpasang") from None
+>>>>>>> 29e22aa (Oi v1.0.6)
     except Exception as exc:
         logger.exception("doctor_agent_memory failed for agent_id=%s", agent_id)
         raise OiError(ErrorCode.INTERNAL_ERROR, str(exc)) from exc

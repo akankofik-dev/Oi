@@ -111,11 +111,19 @@ def probe_credentials(creds: dict[str, Any]) -> None:
 def _api_key(creds: dict[str, Any]) -> str:
     api_key = str(creds.get("api_key") or "").strip()
     if not api_key:
+<<<<<<< HEAD
         raise ValueError("请填写 QQ 音乐 API Key")
     if not api_key.startswith("qmk-"):
         raise ValueError(
             "QQ 音乐需使用 qmk- 开头的 API Key，请登录 "
             "https://y.qq.com/n/ryqq_v2/qqmusic_skills 获取"
+=======
+        raise ValueError("Isi API Key QQ Music")
+    if not api_key.startswith("qmk-"):
+        raise ValueError(
+            "QQ Music perlu API Key berawalan qmk-, silakan masuk ke "
+            "https://y.qq.com/n/ryqq_v2/qqmusic_skills untuk mendapatkan"
+>>>>>>> 29e22aa (Oi v1.0.6)
         )
     return api_key
 
@@ -130,7 +138,11 @@ def _post(creds: dict[str, Any], path: str, params: dict[str, Any]) -> str:
     with httpx.Client(timeout=30.0) as client:
         r = client.post(f"{BASE_URL}{path}", headers=headers, json=body)
         if r.status_code == 401:
+<<<<<<< HEAD
             raise ValueError("QQ 音乐 API Key 无效或已过期")
+=======
+            raise ValueError("API Key QQ Music tidak valid atau sudah kedaluwarsa")
+>>>>>>> 29e22aa (Oi v1.0.6)
         r.raise_for_status()
         payload = r.json()
     if isinstance(payload, dict):
@@ -138,8 +150,15 @@ def _post(creds: dict[str, Any], path: str, params: dict[str, Any]) -> str:
         msg = str(payload.get("msg") or "")
         if ret not in (0, None, "0") and "route not found" not in msg:
             if ret in (11534343, "11534343") or "unauthorized" in msg.lower():
+<<<<<<< HEAD
                 raise ValueError(f"QQ 音乐 API Key 无效: {msg or ret}")
             # Some endpoints return ret!=0 with empty msg for empty personalized data.
             if msg:
                 raise ValueError(f"QQ 音乐接口错误 [{ret}]: {msg}")
+=======
+                raise ValueError(f"API Key QQ Music tidak valid: {msg or ret}")
+            # Some endpoints return ret!=0 with empty msg for empty personalized data.
+            if msg:
+                raise ValueError(f"Galat antarmuka QQ Music [{ret}]: {msg}")
+>>>>>>> 29e22aa (Oi v1.0.6)
     return json.dumps(payload, ensure_ascii=False, indent=2)

@@ -495,7 +495,11 @@ def _http_error_message(response: httpx.Response) -> str:
     except Exception:
         pass
     if response.status_code == 401:
+<<<<<<< HEAD
         return "IMA 认证失败，请检查 Client ID 与 API Key"
+=======
+        return "Autentikasi IMA gagal, periksa Client ID dan API Key"
+>>>>>>> 29e22aa (Oi v1.0.6)
     return f"HTTP {response.status_code}"
 
 

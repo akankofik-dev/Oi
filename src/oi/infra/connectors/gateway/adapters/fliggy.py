@@ -26,13 +26,21 @@ _USER_AGENT = "oi-connector/0.1"
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "fliggy_ai_search",
+<<<<<<< HEAD
         "description": "飞猪 AI 搜索：用自然语言查酒店、景点、航班、火车等",
+=======
+        "description": "Pencarian Fliggy AI: cari hotel, tempat wisata, penerbangan, kereta, dll dengan bahasa natural",
+>>>>>>> 29e22aa (Oi v1.0.6)
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
+<<<<<<< HEAD
                     "description": "完整自然语言需求，如「明天北京到上海机票」",
+=======
+                    "description": "Kebutuhan bahasa natural yang lengkap, mis. 'tiket pesawat Beijing ke Shanghai besok'",
+>>>>>>> 29e22aa (Oi v1.0.6)
                 },
             },
             "required": ["query"],
@@ -40,13 +48,21 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "fliggy_fast_search",
+<<<<<<< HEAD
         "description": "飞猪极速关键词搜索：景点、酒店、门票、线路等",
+=======
+        "description": "Pencarian kata kunci cepat Fliggy: tempat wisata, hotel, tiket, rute, dll",
+>>>>>>> 29e22aa (Oi v1.0.6)
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
+<<<<<<< HEAD
                     "description": "关键词，如「杭州西湖附近酒店」",
+=======
+                    "description": "Kata kunci, mis. 'hotel dekat Danau Barat Hangzhou'",
+>>>>>>> 29e22aa (Oi v1.0.6)
                 },
             },
             "required": ["query"],
@@ -86,7 +102,11 @@ def probe_credentials(creds: dict[str, Any]) -> None:
 def _api_key(creds: dict[str, Any]) -> str:
     api_key = str(creds.get("api_key") or "").strip()
     if not api_key:
+<<<<<<< HEAD
         raise ValueError("请填写飞猪 API Key")
+=======
+        raise ValueError("Isi API Key Fliggy")
+>>>>>>> 29e22aa (Oi v1.0.6)
     return api_key
 
 
@@ -178,18 +198,31 @@ def _mcp_call(creds: dict[str, Any], method: str, params: dict[str, Any]) -> Any
     with httpx.Client(timeout=60.0) as client:
         r = client.post(MCP_URL, headers=headers, content=body.encode("utf-8"))
     if r.status_code == 401:
+<<<<<<< HEAD
         raise ValueError("飞猪 API Key 无效或鉴权失败")
     r.raise_for_status()
     payload = r.json()
     if not isinstance(payload, dict):
         raise ValueError("飞猪 MCP 返回格式错误")
+=======
+        raise ValueError("API Key Fliggy tidak valid atau autentikasi gagal")
+    r.raise_for_status()
+    payload = r.json()
+    if not isinstance(payload, dict):
+        raise ValueError("Fliggy MCP mengembalikan format salah")
+>>>>>>> 29e22aa (Oi v1.0.6)
     if payload.get("error"):
         err = payload["error"]
         msg = err.get("message") if isinstance(err, dict) else err
         text = str(msg or err)
         if "authorization" in text.lower() or "api key" in text.lower():
+<<<<<<< HEAD
             raise ValueError(f"飞猪 API Key 无效: {text}")
         raise ValueError(f"飞猪 MCP 错误: {text}")
+=======
+            raise ValueError(f"API Key Fliggy tidak valid: {text}")
+        raise ValueError(f"Galat Fliggy MCP: {text}")
+>>>>>>> 29e22aa (Oi v1.0.6)
     return payload.get("result")
 
 

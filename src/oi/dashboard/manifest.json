@@ -2,7 +2,11 @@
   "id": "/",
   "name": "Oi",
   "short_name": "Oi",
+<<<<<<< HEAD
   "description": "Smarter self-hosted AI assistant — multi-user, multi-agent",
+=======
+  "description": "Asisten AI self-hosted yang lebih cerdas — multi-pengguna, multi-agent",
+>>>>>>> 29e22aa (Oi v1.0.6)
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -37,5 +41,13 @@
       "purpose": "any"
     }
   ],
+<<<<<<< HEAD
   "categories": ["productivity", "utilities"]
 }
+=======
+  "categories": [
+    "productivity",
+    "utilities"
+  ]
+}
+>>>>>>> 29e22aa (Oi v1.0.6)

@@ -64,8 +64,13 @@ def _api_key(creds: dict[str, Any]) -> str:
         raise ValueError("missing wechat-reading API key")
     if not api_key.startswith("wrk-"):
         raise ValueError(
+<<<<<<< HEAD
             "微信读书需使用 wrk- 开头的 API Key（非浏览器 Cookie）。"
             "请打开 https://weread.qq.com/r/weread-skills 登录后复制 API Key 并更新连接器配置"
+=======
+            "WeChat Reading perlu API Key berawalan wrk- (bukan Cookie browser)."
+            "Buka https://weread.qq.com/r/weread-skills untuk masuk lalu salin API Key dan perbarui konfigurasi konektor"
+>>>>>>> 29e22aa (Oi v1.0.6)
         )
     return api_key
 

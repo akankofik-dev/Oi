@@ -1,0 +1,33 @@
+// Sizing vars come from `.oi-spin` in styles/spin-override.css so the
+// indicator can follow antd's size prop; fallbacks cover standalone usage.
+.host {
+  position: relative;
+  display: inline-block;
+  width: var(--oi-spinner-size, 48px);
+  height: var(--oi-spinner-size, 48px);
+  font-size: 0;
+  vertical-align: middle;
+}
+
+.ring {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border: var(--oi-spinner-ring-width, 4px) solid
+    color-mix(in srgb, var(--fn-color-brand) 20%, transparent);
+  border-top-color: var(--fn-color-brand);
+  border-radius: 50%;
+  animation: oiSpinnerSpin 0.85s linear infinite;
+}
+
+@keyframes oiSpinnerSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ring {
+    animation: none;
+  }
+}

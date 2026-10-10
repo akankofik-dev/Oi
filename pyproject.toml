@@ -31,6 +31,11 @@ dependencies = [
     "websockets>=13.0",
     "acme>=5.6.0",
     "josepy>=2.2.0",
+<<<<<<< HEAD
+=======
+    # Pin tenacity <9.2.0 for google-genai compatibility (requires tenacity<9.2.0,>=8.2.3)
+    "tenacity>=8.2.3,<9.2.0",
+>>>>>>> 29e22aa (Oi v1.0.6)
     # Pin aiobotocore/botocore selaras dengan boto3 untuk mencegah pip resolver hang
     # (pernah hang di "looking at multiple versions of aiobotocore[boto3]").
     # Kombinasi terverifikasi: boto3 1.40.61 + botocore 1.40.61 + aiobotocore 2.25.1.

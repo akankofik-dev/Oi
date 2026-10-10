@@ -55,7 +55,11 @@ def start_user_device_login(
         or ""
     ).strip()
     if not device_code or not verification_url:
+<<<<<<< HEAD
         raise ValueError(f"lark-cli auth login --no-wait 返回不完整: {raw[:500]}")
+=======
+        raise ValueError(f"lark-cli auth login --no-wait mengembalikan hasil tidak lengkap: {raw[:500]}")
+>>>>>>> 29e22aa (Oi v1.0.6)
     expires_in = payload.get("expires_in")
     return {
         "device_code": device_code,
@@ -93,7 +97,11 @@ def complete_user_device_login(
     user_available = isinstance(user, dict) and bool(user.get("available"))
     identity = str(status.get("identity") or status.get("defaultAs") or "").strip()
     if not user_available:
+<<<<<<< HEAD
         raise ValueError("用户授权未完成或 token 无效。请重新点击「登录授权」并打开链接完成授权。")
+=======
+        raise ValueError("Otorisasi pengguna belum selesai atau token tidak valid. Klik lagi 'Otorisasi Masuk' dan buka tautan untuk menyelesaikan otorisasi.")
+>>>>>>> 29e22aa (Oi v1.0.6)
     missing_search = not _auth_has_scope(binary=binary, env=env, scope="search:docs:read")
     return {
         "ok": True,
@@ -108,8 +116,13 @@ def complete_user_device_login(
         "search_docs_scope": not missing_search,
         "auth_status": status,
         "warning": (
+<<<<<<< HEAD
             "已登录，但缺少 search:docs:read。"
             "请在飞书开放平台为应用开通该权限后，再点一次「登录授权」。"
+=======
+            "Sudah masuk, tetapi kurang search:docs:read."
+            "Aktifkan izin itu untuk aplikasi di platform terbuka Feishu, lalu klik lagi 'Otorisasi Masuk'."
+>>>>>>> 29e22aa (Oi v1.0.6)
             if missing_search
             else None
         ),

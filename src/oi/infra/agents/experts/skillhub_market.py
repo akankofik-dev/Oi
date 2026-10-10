@@ -948,7 +948,11 @@ def _expert_manifest(
 def _expert_soul(item: SkillHubSkillset, skill_slugs: list[str]) -> str:
     name = _expert_label_zh(item)
     skill_list = "\n".join(f"- `{slug}`" for slug in skill_slugs)
+<<<<<<< HEAD
     summary = item.summary or "围绕该 SkillHub skillset 提供专家级工作流支持。"
+=======
+    summary = item.summary or "Menyediakan dukungan alur kerja tingkat ahli untuk skillset SkillHub ini."
+>>>>>>> 29e22aa (Oi v1.0.6)
     return f"""# {name}
 
 你是「{name}」，来源于 SkillHub skillset `{item.slug}`。
@@ -1147,7 +1151,11 @@ def _workflow_quick_prompts(
         title = _clip_text(step["title"], 16)
         description = _clip_text(_step_description(step["section"]), 28)
         if not description:
+<<<<<<< HEAD
             description = f"完成「{title}」"
+=======
+            description = f'Selesaikan "{title}"'
+>>>>>>> 29e22aa (Oi v1.0.6)
         prompts.append(
             {
                 "title": {

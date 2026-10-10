@@ -39,7 +39,11 @@ echo "=== [3/6] Install sibling packages ==="
 # oi-memory, oi-gateway, oi-browser: tidak depend ke sibling, install normal
 pip install "oi-memory @ git+https://github.com/akankofik-dev/oi-memory.git@v1.0.0"
 pip install "oi-gateway @ git+https://github.com/akankofik-dev/oi-gateway.git@v1.0.0"
+<<<<<<< HEAD
 pip install "oi-browser @ git+https://github.com/akankofik-dev/oi-browser.git@v1.0.1"
+=======
+pip install "oi-browser @ git+https://github.com/akankofik-dev/oi-browser.git@v1.0.2"
+>>>>>>> 29e22aa (Oi v1.0.6)
 # oi-harness: depend ke oi-memory & oi-browser (ga ada di PyPI)
 # Install --no-deps, lalu install deps PyPI-nya manual
 pip install --no-deps "oi-harness @ git+https://github.com/akankofik-dev/oi-harness.git@v1.0.1"

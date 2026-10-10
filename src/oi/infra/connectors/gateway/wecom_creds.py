@@ -136,13 +136,20 @@ def _fetch_mcp_config(*, bot_id: str, bot_secret: str) -> list[dict[str, Any]]:
             raw = resp.read().decode("utf-8")
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace") if exc.fp else str(exc)
+<<<<<<< HEAD
         raise ValueError(f"企业微信 get_mcp_config HTTP {exc.code}: {detail}") from exc
     except URLError as exc:
         raise ValueError(f"企业微信 get_mcp_config 网络错误: {exc}") from exc
+=======
+        raise ValueError(f"WeCom get_mcp_config HTTP {exc.code}: {detail}") from exc
+    except URLError as exc:
+        raise ValueError(f"WeCom get_mcp_config galat jaringan: {exc}") from exc
+>>>>>>> 29e22aa (Oi v1.0.6)
 
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
+<<<<<<< HEAD
         raise ValueError(f"企业微信 get_mcp_config 返回非 JSON: {raw[:200]}") from exc
     if not isinstance(data, dict):
         raise ValueError("企业微信 get_mcp_config 返回格式无效")
@@ -153,4 +160,16 @@ def _fetch_mcp_config(*, bot_id: str, bot_secret: str) -> list[dict[str, Any]]:
     items = data.get("list")
     if not isinstance(items, list) or not items:
         raise ValueError("企业微信返回空 MCP 配置列表，请确认机器人已开通 CLI 能力")
+=======
+        raise ValueError(f"WeCom get_mcp_config mengembalikan bukan JSON: {raw[:200]}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("WeCom get_mcp_config mengembalikan format tidak valid")
+    errcode = int(data.get("errcode") or 0)
+    if errcode != 0:
+        errmsg = str(data.get("errmsg") or f"errcode={errcode}").strip()
+        raise ValueError(f"Verifikasi kredensial WeCom gagal: {errmsg}")
+    items = data.get("list")
+    if not isinstance(items, list) or not items:
+        raise ValueError("WeCom mengembalikan daftar konfigurasi MCP kosong, pastikan bot sudah mengaktifkan kemampuan CLI")
+>>>>>>> 29e22aa (Oi v1.0.6)
     return [item for item in items if isinstance(item, dict)]

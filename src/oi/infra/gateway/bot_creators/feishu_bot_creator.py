@@ -289,7 +289,11 @@ def cmd_init() -> None:
 
 
 def cmd_create(avatar_url: str = "", greeting: str = "") -> None:
+<<<<<<< HEAD
     platform_label = "Lark" if PLATFORM == "lark" else "飞书"
+=======
+    platform_label = "Lark" if PLATFORM == "lark" else "Feishu"
+>>>>>>> 29e22aa (Oi v1.0.6)
     _log_info("login", f"Starting {platform_label} scan-to-create flow...")
     try:
         finish = register_feishu_app(avatar_url=avatar_url, greeting=greeting)

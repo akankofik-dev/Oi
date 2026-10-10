@@ -118,3 +118,4 @@ scripts/lh_image_install_oi_tencentos.sh
 
 # Local build of the oi-* forks; they are git-pinned now
 vendor/
+dashboard/node_modules/

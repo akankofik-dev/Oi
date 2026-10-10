@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
 <rect x="368.338" y="153.006" width="21.0069" height="16.2326" rx="8.11629" fill="url(#paint0_linear_107_16672)"/>
 <rect x="396.016" y="153.006" width="53.4721" height="16.2326" rx="8.11629" fill="url(#paint1_linear_107_16672)"/>
@@ -58,4 +59,15 @@
 <stop offset="1" stop-color="#FF6466"/>
 </linearGradient>
 </defs>
+=======
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+<!-- Red C with speed lines -->
+<path d="M60 20 C40 20 25 35 25 55 C25 75 40 90 60 90" stroke="#E53935" stroke-width="12" fill="none" stroke-linecap="round"/>
+<!-- Speed lines -->
+<line x1="70" y1="40" x2="90" y2="40" stroke="#E53935" stroke-width="5" stroke-linecap="round"/>
+<line x1="70" y1="55" x2="95" y2="55" stroke="#E53935" stroke-width="5" stroke-linecap="round"/>
+<line x1="70" y1="70" x2="85" y2="70" stroke="#E53935" stroke-width="5" stroke-linecap="round"/>
+<!-- Oi text -->
+<text x="60" y="110" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="white" text-anchor="middle">Oi</text>
+>>>>>>> 29e22aa (Oi v1.0.6)
 </svg>

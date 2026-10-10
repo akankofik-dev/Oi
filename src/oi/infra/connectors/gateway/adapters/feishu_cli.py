@@ -27,6 +27,7 @@ _USER_ONLY_SHORTCUTS = frozenset(
 )
 
 _USER_AUTH_REQUIRED_MSG = (
+<<<<<<< HEAD
     "文档搜索需要先完成飞书账号授权。"
     "请用户打开 Oi「连接器 → 飞书 CLI」，点击「登录授权」并在弹出页完成授权，然后点「我已授权」。"
     "禁止建议、生成或执行任何终端命令（包括任何 CLI）。"
@@ -36,6 +37,17 @@ _MISSING_SEARCH_SCOPE_MSG = (
     "请用户打开 Oi「连接器 → 飞书 CLI」，点击「登录授权」重新授权；"
     "若仍失败，再到飞书开放平台确认已开通并发布「搜索云文档」权限。"
     "禁止建议、生成或执行任何终端命令（包括任何 CLI）。"
+=======
+    "Pencarian dokumen perlu otorisasi akun Feishu dulu."
+    "Minta pengguna buka 'Konektor → Feishu CLI' di Oi, klik 'Otorisasi Masuk' dan selesaikan otorisasi di halaman popup, lalu klik 'Saya sudah otorisasi'."
+    "Dilarang menyarankan, membuat, atau menjalankan perintah terminal apa pun (termasuk CLI apa pun)."
+)
+_MISSING_SEARCH_SCOPE_MSG = (
+    "Izin pencarian dokumen belum diberikan ke pengguna yang masuk saat ini."
+    "Minta pengguna buka 'Konektor → Feishu CLI' di Oi, klik 'Otorisasi Masuk' untuk otorisasi ulang;"
+    "Jika masih gagal, pastikan izin 'Cari dokumen cloud' sudah diaktifkan dan dipublikasi di platform terbuka Feishu."
+    "Dilarang menyarankan, membuat, atau menjalankan perintah terminal apa pun (termasuk CLI apa pun)."
+>>>>>>> 29e22aa (Oi v1.0.6)
 )
 
 TOOLS: list[dict[str, Any]] = [
@@ -45,7 +57,11 @@ TOOLS: list[dict[str, Any]] = [
             "Feishu docs via Oi Connectors (gateway). "
             "method examples: '+search', '+fetch', '+create'. "
             "On auth/permission errors: tell the user to open Oi "
+<<<<<<< HEAD
             "Connectors → 飞书 CLI → 登录授权. "
+=======
+            "Konektor → Feishu CLI → Otorisasi Masuk. "
+>>>>>>> 29e22aa (Oi v1.0.6)
             "NEVER suggest or run shell/CLI commands. NEVER invent auth login commands."
         ),
         "inputSchema": {

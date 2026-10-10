@@ -56,10 +56,17 @@ def ask_wendao(creds: dict[str, Any], args: dict[str, Any]) -> str:
         r.raise_for_status()
         text = r.text.strip()
     if not text:
+<<<<<<< HEAD
         raise ValueError("携程问道返回为空")
     # Upstream occasionally returns plain JSON errors.
     if text.startswith("{") and ("error" in text.lower() or "invalid" in text.lower()):
         raise ValueError(f"携程问道接口错误: {text[:200]}")
+=======
+        raise ValueError("Ctrip Wendao mengembalikan kosong")
+    # Upstream occasionally returns plain JSON errors.
+    if text.startswith("{") and ("error" in text.lower() or "invalid" in text.lower()):
+        raise ValueError(f"Galat antarmuka Ctrip Wendao: {text[:200]}")
+>>>>>>> 29e22aa (Oi v1.0.6)
     return text
 
 
@@ -71,9 +78,16 @@ def probe_credentials(creds: dict[str, Any]) -> None:
 def _token(creds: dict[str, Any]) -> str:
     token = str(creds.get("api_key") or creds.get("token") or "").strip()
     if not token:
+<<<<<<< HEAD
         raise ValueError("请填写携程问道 Token")
     if not _TOKEN_RE.match(token):
         raise ValueError(
             "携程问道 Token 格式不正确，请打开 http://t.ctrip.cn/28J6RhL 申请后复制完整 Token"
+=======
+        raise ValueError("Isi Token Ctrip Wendao")
+    if not _TOKEN_RE.match(token):
+        raise ValueError(
+            "Format Token Ctrip Wendao salah, buka http://t.ctrip.cn/28J6RhL untuk mengajukan lalu salin Token lengkap"
+>>>>>>> 29e22aa (Oi v1.0.6)
         )
     return token
