@@ -1,0 +1,100 @@
+import type { ParsedToolOutput } from "./types";
+
+/**
+ * Parse tool ``output``.
+ * Accepts a JSON string or an already-parsed object.
+ */
+export function parseOiToolOutput(output: unknown): ParsedToolOutput {
+  if (output === undefined || output === null || output === "") {
+    return {
+      isJson: false,
+      raw: output,
+      text: typeof output === "string" ? output : undefined,
+    };
+  }
+
+  if (typeof output === "object") {
+    if (Array.isArray(output)) {
+      return { isJson: true, raw: output };
+    }
+    const obj = output as Record<string, unknown>;
+    return {
+      isJson: true,
+      raw: output,
+      oiUi: undefined,
+      data: "data" in obj ? obj.data : undefined,
+      text: typeof obj.text === "string" ? obj.text : undefined,
+    };
+  }
+
+  if (typeof output !== "string") {
+    return { isJson: false, raw: output, text: String(output) };
+  }
+
+  try {
+    const raw = JSON.parse(output) as unknown;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return {
+        isJson: true,
+        raw,
+        text: typeof raw === "string" ? raw : undefined,
+      };
+    }
+    const obj = raw as Record<string, unknown>;
+    const oiUi = undefined;
+    const text = typeof obj.text === "string" ? obj.text : undefined;
+    const data = "data" in obj ? obj.data : undefined;
+    return { isJson: true, raw, oiUi, data, text };
+  } catch {
+    return { isJson: false, raw: output, text: output };
+  }
+}
+
+/** Rebuild a JSON output string after L2 ``patchResult`` on ``data``. */
+export function mergePatchedToolOutput(
+  previousOutput: string | undefined,
+  nextData: unknown,
+): string {
+  const parsed = parseOiToolOutput(previousOutput);
+  if (parsed.isJson && parsed.raw && typeof parsed.raw === "object") {
+    const base = { ...(parsed.raw as Record<string, unknown>) };
+    base.data = nextData;
+    return JSON.stringify(base);
+  }
+  if (typeof nextData === "string") {
+    return nextData;
+  }
+  try {
+    return JSON.stringify(nextData);
+  } catch {
+    return String(nextData);
+  }
+}
+
+/**
+ * Resolve the effective UI payload for a tool result.
+ *
+ * Precedence: an explicit ``data`` key always wins (e.g. after an L2
+ * ``patchResult`` rewrite); an offloaded envelope (``data_ref: "artifact"``)
+ * falls back to the message ``artifact``; otherwise legacy shapes pass through
+ * (``raw`` for JSON, ``output`` text otherwise).
+ */
+export function resolvePluginUiData(
+  parsed: ParsedToolOutput,
+  artifact: unknown,
+  output: string | undefined,
+): unknown {
+  if (parsed.data !== undefined) return parsed.data;
+  const raw = parsed.raw;
+  if (
+    parsed.oiUi &&
+    raw !== null &&
+    typeof raw === "object" &&
+    !Array.isArray(raw) &&
+    (raw as Record<string, unknown>).data_ref === "artifact" &&
+    artifact != null
+  ) {
+    return artifact;
+  }
+  return parsed.isJson ? parsed.raw : output;
+}
