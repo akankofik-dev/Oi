@@ -34,5 +34,4 @@ COMMANDS: dict[str, tuple[str, str, str]] = {
     "backup": (".commands.backup", "backup", "Export and restore Oi backups."),
     "acp": (".commands.acp", "acp_cmd", "Run Oi agent as ACP server (stdio)."),
     "plugin": (".commands.plugin", "plugin", "Install and manage plugins."),
-    "tunnel": (".commands.tunnel", "tunnel", "Expose Oi to the internet via Cloudflare Tunnel."),
-}
+    }
