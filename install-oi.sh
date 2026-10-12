@@ -329,13 +329,35 @@ if [ -f "$OI_PID_FILE" ]; then
     fi
     rm -f "$OI_PID_FILE"
 fi
+# Fallback: matikan SEMUA proses 'oi run' yang masih jalan (mis. start manual tanpa PID file).
+for _p in $(pgrep -f "oi run" 2>/dev/null || true); do
+    if [ "$_p" != "$$" ]; then
+        printf '  %b%s (PID %s)%s%b\n' "$_C_DIM" "Menghentikan proses oi run sisa" "$_p" "$_G_ELL" "$_C_RESET" >&2
+        kill "$_p" 2>/dev/null || true
+    fi
+done
+sleep 2
+for _p in $(pgrep -f "oi run" 2>/dev/null || true); do
+    if [ "$_p" != "$$" ]; then
+        kill -9 "$_p" 2>/dev/null || true
+    fi
+done
 
 _step_begin "  " "Starting server"
 nohup oi run --host 127.0.0.1 --port "$OI_PORT" > "$HOME/oi-server.log" 2>&1 &
 echo $! > "$OI_PID_FILE"
-sleep 5
+# Health check: coba 12x dengan interval 5 detik (total 60 detik).
+# Server butuh waktu untuk startup, jangan lapor gagal terlalu cepat.
+_HEALTH_OK=0
+for _i in $(seq 1 12); do
+    sleep 5
+    if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$OI_PORT/" 2>/dev/null | grep -q "200\|302"; then
+        _HEALTH_OK=1
+        break
+    fi
+done
 
-if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$OI_PORT/" | grep -q "200\|302"; then
+if [ "$_HEALTH_OK" = "1" ]; then
     _step_end
     printf '\n' >&2
     printf '  %b%s%b Oi berjalan di %bhttp://127.0.0.1:%s%b\n' "$_C_GREEN" "$_G_OK" "$_C_RESET" "$_C_BOLD" "$OI_PORT" "$_C_RESET" >&2

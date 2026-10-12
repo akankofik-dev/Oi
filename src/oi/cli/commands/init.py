@@ -6,6 +6,8 @@ import shutil
 
 import click
 
+from oi.cli.support.style import echo_error, echo_success, step_list
+
 
 @click.command("init")
 @click.option(
@@ -65,9 +67,8 @@ def init(
     has_db = (home / "oi.db").is_file()
     if home.exists() and any(home.iterdir()):
         if has_db and not force:
-            click.echo(
-                f"error: {home} already exists and is not empty. Use --force to reset.",
-                err=True,
+            echo_error(
+                f"{home} already exists and is not empty. Use --force to reset."
             )
             raise SystemExit(1)
         if force:
@@ -77,50 +78,60 @@ def init(
                 if not _prompts.confirm(
                     f"Wipe {home}? This deletes ALL Oi state.", default=False
                 ):
-                    click.echo("aborted", err=True)
+                    echo_error("aborted")
                     raise SystemExit(1)
             shutil.rmtree(home)
 
-    paths.ensure_root()
-    PluginManager(plugins_dir=paths.plugins_dir, config_path=paths.config).seed_bundled()
-    apply_env_file(env_file_path(paths.root))
-    config = load_config(paths.config)
-    db = open_database(config, paths)
-    try:
-        run_migrations(db)
-
-        username = admin_username
-        password = admin_password
-        display_name = admin_display_name
-
-        if not non_interactive:
-            from oi.cli.support import prompts as _prompts
-
-            if not username:
-                username = _prompts.text("Admin username:")
-            if not password:
-                password = _prompts.password("Admin password:")
-            if display_name is None:
-                display_name = _prompts.text("Display name (optional):", default="") or None
+    # Interactive input is collected BEFORE the checklist, so no prompt
+    # ever appears while a step is pulsing.
+    username = admin_username
+    password = admin_password
+    display_name = admin_display_name
+    if not non_interactive:
+        from oi.cli.support import prompts as _prompts
 
         if not username:
-            click.echo("error: admin username is required", err=True)
-            raise SystemExit(1)
-        try:
-            validate_password_policy(password or "")
-        except OiError as exc:
-            click.echo(f"error: {exc.message}", err=True)
-            raise SystemExit(1) from None
+            username = _prompts.text("Admin username:")
+        if not password:
+            password = _prompts.password("Admin password:")
+        if display_name is None:
+            display_name = _prompts.text("Display name (optional):", default="") or None
 
-        UserRepo(db).create(
-            username=username,
-            password_hash=hash_password(password or ""),
-            role="admin",
-            display_name=display_name,
+    plugin_mgr = PluginManager(plugins_dir=paths.plugins_dir, config_path=paths.config)
+    with step_list("Bootstrapping Oi") as steps:
+        steps.run("Preparing directories", paths.ensure_root)
+        steps.run("Seeding bundled plugins", plugin_mgr.seed_bundled)
+        steps.run(
+            "Applying environment file",
+            lambda: apply_env_file(env_file_path(paths.root)),
         )
-    finally:
-        db.close()
+        config = steps.run("Loading configuration", lambda: load_config(paths.config))
+        db = steps.run("Opening database", lambda: open_database(config, paths))
+        try:
+            steps.run(
+                "Running database migrations", lambda: run_migrations(db)
+            )
 
-    click.echo(f"\u2705 Oi bootstrapped at {home}")
+            if not username:
+                echo_error("admin username is required")
+                raise SystemExit(1)
+            try:
+                validate_password_policy(password or "")
+            except OiError as exc:
+                echo_error(exc.message)
+                raise SystemExit(1)
+            steps.run(
+                "Creating admin user",
+                lambda: UserRepo(db).create(
+                    username=username,
+                    password_hash=hash_password(password or ""),
+                    role="admin",
+                    display_name=display_name,
+                ),
+            )
+        finally:
+            db.close()
+
+    echo_success(f"Oi bootstrapped at {home}")
     click.echo(f"   admin user: {username}")
     click.echo("   next: `oi run` (optional: `oi agent use <id>` to pin default agent)")
