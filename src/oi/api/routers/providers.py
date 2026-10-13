@@ -183,6 +183,17 @@ async def set_active_model(
     server.services.settings_repo.set_active_model(body.provider_name, body.model)
     if server.app_runtime is not None:
         await server.app_runtime.agent_registry.on_provider_changed(active_model_changed=True)
+        # Broadcast model change to all dashboard clients for live-refresh.
+        # Fail-open: never break the API response if broadcast fails.
+        try:
+            hub = server.app_runtime.gateway.ws_hub
+            await hub.broadcast({
+                "type": "model_changed",
+                "provider_name": body.provider_name,
+                "model": body.model,
+            })
+        except Exception:
+            logger.exception("failed to broadcast model_changed event")
     return {"provider_name": body.provider_name, "model": body.model}
 
 
