@@ -257,6 +257,88 @@ class GlobalProcessor:
         self._thread_message_repo = repo
         self.teams.replace_thread_message_repo(repo)
 
+    def _apply_auto_router(
+        self,
+        msg: InboundMessage,
+        *,
+        agent_id: str,
+        agent_row: Any | None,
+        user_id: Any,
+        session_key: str,
+    ) -> tuple[str, Any | None, str]:
+        """Flag-gated smart auto-router hook.
+
+        Returns ``(agent_id, agent_row, session_key)`` — unchanged unless the
+        ``auto_router`` flag is ON and ``auto_router_mode`` is ``"auto"`` with
+        a valid routing target. Mode ``"suggest"`` only logs the suggestion
+        (and records intent in the thread context store); it never switches.
+        With the default empty routing table and no latency data the router
+        always keeps the current agent, so the flag is a safe no-op until an
+        operator configures ``intent_agents`` or latency accrues.
+        """
+        from oi.infra.optimizations import get_manager  # noqa: PLC0415
+
+        try:
+            manager = get_manager()
+            if manager is None or not getattr(manager.flags, "auto_router", False):
+                return agent_id, agent_row, session_key
+            router = manager.auto_router
+            candidates = [agent_id]
+            try:
+                uid = int(user_id) if user_id else 0
+            except (TypeError, ValueError):
+                uid = 0
+            if uid:
+                try:
+                    rows = self._agent_repo.list_by_user(uid, include_disabled=False)
+                    for row in rows:
+                        rid = getattr(row, "id", None)
+                        if rid and str(rid) not in candidates:
+                            candidates.append(str(rid))
+                except Exception:
+                    logger.exception("auto_router: list_by_user failed; current agent only")
+            decision = router.route(
+                msg.text or "",
+                thread_id=session_key,
+                current_agent_id=agent_id,
+                candidates=candidates,
+            )
+            logger.info(
+                "auto_router: intent=%s mode=%s current=%s decision=%s reason=%s",
+                decision.intent.value,
+                decision.mode,
+                agent_id,
+                decision.agent_id,
+                decision.reason,
+            )
+            target = decision.agent_id
+            if router.mode != "auto" or not target or target == agent_id:
+                return agent_id, agent_row, session_key
+            if target not in candidates:
+                logger.warning(
+                    "auto_router: target %s not in user agents; keeping %s",
+                    target,
+                    agent_id,
+                )
+                return agent_id, agent_row, session_key
+            new_row = self._agent_repo.get(target)
+            if new_row is None:
+                logger.warning(
+                    "auto_router: target %s no longer exists; keeping %s", target, agent_id
+                )
+                return agent_id, agent_row, session_key
+            new_session_key = session_key_from_message(msg, agent_id=target)
+            logger.info(
+                "auto_router: switched agent %s -> %s (%s)",
+                agent_id,
+                target,
+                decision.reason,
+            )
+            return target, new_row, new_session_key
+        except Exception:
+            logger.exception("auto_router hook failed; keeping original agent")
+            return agent_id, agent_row, session_key
+
     def _agent_trajectory_enabled(self, agent_id: str, row: Any | None = None) -> bool:
         if self._trajectory_service is None:
             return False
@@ -623,6 +705,14 @@ class GlobalProcessor:
             agent_owner_id=agent_row.user_id if agent_row is not None else None,
         )
         session_key = session_key_from_message(msg, agent_id=agent_id)
+        # Flag-gated auto-router hook (no-op unless the auto_router flag is ON).
+        agent_id, agent_row, session_key = self._apply_auto_router(
+            msg,
+            agent_id=agent_id,
+            agent_row=agent_row,
+            user_id=user_id,
+            session_key=session_key,
+        )
         channel_type = msg.channel_type or "unknown"
         im_meta = sanitize_im_metadata(msg)
 
@@ -702,8 +792,14 @@ class GlobalProcessor:
                     ):
                         yield ev
                 finally:
+                    # Drain any batched history writes (no-op unless batch_db_writes
+                    # is ON). The HITL answer stream goes through _project_chunks
+                    # (maybe_batch_flush), so drop its batch bookkeeping here too.
+                    from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
                     from oi.infra.history.recorder import RecordingTracker  # noqa: PLC0415
+                    from oi.infra.optimizations import flush_batch  # noqa: PLC0415
 
+                    await flush_batch(history_tracker, flush_tracker)
                     if (
                         isinstance(history_tracker, RecordingTracker)
                         and answer_outcome.awaiting_more
@@ -883,6 +979,13 @@ class GlobalProcessor:
                         content=[TextContent(text=hint)],
                     )
         finally:
+            # Drain any batched history writes (no-op unless batch_db_writes is
+            # ON). Also drops the tracker's batch bookkeeping so the
+            # BatchHistoryWriter does not retain finished IM trackers forever.
+            from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
+            from oi.infra.optimizations import flush_batch  # noqa: PLC0415
+
+            await flush_batch(history_tracker, flush_tracker)
             if persist_failed_turn or (not stream_ok and not hitl_paused):
                 await self._persist_incomplete_turn(
                     thread_id, history_tracker, title_source=msg.text
@@ -915,13 +1018,23 @@ class GlobalProcessor:
             return
 
         agent_row = self._agent_repo.get(agent_id)
-        team_host = is_team_agent(agent_row)
-        traj_on = self._agent_trajectory_enabled(agent_id, agent_row)
         user_id = resolve_user_id_for_message(
             msg,
             agent_owner_id=agent_row.user_id if agent_row is not None else None,
         )
         session_key = session_key_from_message(msg, agent_id=agent_id)
+        # Flag-gated auto-router hook (no-op unless the auto_router flag is ON).
+        # team_host/traj_on are (re)computed after it so a routed agent switch
+        # flows through consistently.
+        agent_id, agent_row, session_key = self._apply_auto_router(
+            msg,
+            agent_id=agent_id,
+            agent_row=agent_row,
+            user_id=user_id,
+            session_key=session_key,
+        )
+        team_host = is_team_agent(agent_row)
+        traj_on = self._agent_trajectory_enabled(agent_id, agent_row)
         channel_type = msg.channel_type or "unknown"
         im_meta = sanitize_im_metadata(msg)
         meta = msg.metadata or {}
@@ -1004,8 +1117,14 @@ class GlobalProcessor:
                         for frame in message_event_to_cli_chunks(ev):
                             yield _maybe_stamp_team_host(frame, agent_id, team_host)
                 finally:
+                    # Drain any batched history writes (no-op unless batch_db_writes
+                    # is ON). The HITL answer stream goes through _project_chunks
+                    # (maybe_batch_flush), so drop its batch bookkeeping here too.
+                    from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
                     from oi.infra.history.recorder import RecordingTracker  # noqa: PLC0415
+                    from oi.infra.optimizations import flush_batch  # noqa: PLC0415
 
+                    await flush_batch(history_tracker, flush_tracker)
                     if (
                         isinstance(history_tracker, RecordingTracker)
                         and answer_outcome.awaiting_more
@@ -1135,8 +1254,9 @@ class GlobalProcessor:
                 usage_tracker.observe(chunk)
                 history_tracker.observe(chunk)
                 from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
+                from oi.infra.optimizations import maybe_batch_flush  # noqa: PLC0415
 
-                await flush_tracker(history_tracker)
+                await maybe_batch_flush(history_tracker, flush_tracker)
                 self._observe_trajectory(
                     agent_id=agent_id,
                     thread_id=thread_id,
@@ -1207,6 +1327,11 @@ class GlobalProcessor:
             persist_failed_turn = True
             yield _maybe_stamp_team_host(payload, agent_id, team_host)
         finally:
+            # Drain any batched history writes (no-op unless batch_db_writes is ON).
+            from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
+            from oi.infra.optimizations import flush_batch  # noqa: PLC0415
+
+            await flush_batch(history_tracker, flush_tracker)
             self._finish_trajectory(thread_id=thread_id, usage=usage_tracker.usage, enabled=traj_on)
             if persist_failed_turn or not stream_ok:
                 await self._persist_incomplete_turn(
@@ -1249,8 +1374,9 @@ class GlobalProcessor:
                 usage_tracker.observe(chunk)
                 history_tracker.observe(chunk)
                 from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
+                from oi.infra.optimizations import maybe_batch_flush  # noqa: PLC0415
 
-                await flush_tracker(history_tracker)
+                await maybe_batch_flush(history_tracker, flush_tracker)
                 self._observe_trajectory(
                     agent_id=agent_id,
                     thread_id=thread_id,
@@ -1274,6 +1400,11 @@ class GlobalProcessor:
             persist_failed_turn = True
             yield _maybe_stamp_team_host(payload, agent_id, team_host)
         finally:
+            # Drain any batched history writes (no-op unless batch_db_writes is ON).
+            from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
+            from oi.infra.optimizations import flush_batch  # noqa: PLC0415
+
+            await flush_batch(history_tracker, flush_tracker)
             self._finish_trajectory(thread_id=thread_id, usage=usage_tracker.usage, enabled=traj_on)
             if persist_failed_turn or not completed:
                 await self._persist_incomplete_turn(thread_id, history_tracker, title_source=None)

@@ -268,6 +268,18 @@ def build_harness_request(
     reasoning_overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if messages is not None:
+        # Flag-gated context compression (identity when flags are OFF).
+        # The model's real context window decides when smart switching kicks
+        # in; unknown models fall back to a conservative default.
+        from oi.infra.optimizations import (  # noqa: PLC0415
+            compress_request_messages,
+            context_window_for_model,
+        )
+
+        messages = compress_request_messages(
+            messages,
+            context_window_tokens=context_window_for_model(model),
+        )
         req: dict[str, Any] = {
             "messages": messages,
             "thread_id": thread_id,

@@ -415,6 +415,12 @@ class OiServer:
 
         configure_browser_idle_timeout(config.browser_idle_timeout_minutes)
 
+        # Chat-pipeline optimizations: stores feature flags only; modules are
+        # built lazily on first use, so this is a no-op when all flags are OFF.
+        from oi.infra.optimizations import configure as configure_optimizations  # noqa: PLC0415
+
+        configure_optimizations(config.chat)
+
         registry = AgentManager(
             repos=self.services.repos,
             paths=self.paths,

@@ -133,6 +133,61 @@ class AgentConnectionConfig:
     idle_disconnect_minutes: int = 60
 
 
+@dataclass(frozen=True)
+class ChatOptimizations:
+    """Feature flags for chat-pipeline optimizations (L1-L3 + auto-router).
+
+    Every flag defaults to OFF so a fresh or legacy config behaves exactly
+    like the unoptimized pipeline. Enable flags one at a time and restart.
+    ``auto_router_mode`` selects the router behaviour ("off"/"suggest"/"auto")
+    and only takes effect when ``auto_router`` is True.
+    """
+
+    batch_db_writes: bool = False
+    async_history: bool = False
+    smart_context_switch: bool = False
+    agent_pooling: bool = False
+    semantic_compress: bool = False
+    auto_router: bool = False
+    zero_copy_stream: bool = False
+    mmap_history: bool = False
+    provider_prewarm: bool = False
+    predictive_prewarm: bool = False
+    auto_router_mode: str = "suggest"
+
+
+_CHAT_FLAG_FIELDS = (
+    "batch_db_writes",
+    "async_history",
+    "smart_context_switch",
+    "agent_pooling",
+    "semantic_compress",
+    "auto_router",
+    "zero_copy_stream",
+    "mmap_history",
+    "provider_prewarm",
+    "predictive_prewarm",
+)
+
+
+def _parse_chat_section(raw: object) -> ChatOptimizations:
+    if raw is None:
+        return ChatOptimizations()
+    if not isinstance(raw, dict):
+        raise ValueError("config.chat must be an object")
+    defaults = ChatOptimizations()
+    flags: dict[str, Any] = {}
+    for name in _CHAT_FLAG_FIELDS:
+        flags[name] = bool(raw.get(name, getattr(defaults, name)))
+    mode = str(raw.get("auto_router_mode", defaults.auto_router_mode)).strip().lower()
+    if mode not in ("off", "suggest", "auto"):
+        raise ValueError(
+            f"config.chat.auto_router_mode must be off/suggest/auto, got {mode!r}"
+        )
+    flags["auto_router_mode"] = mode
+    return ChatOptimizations(**flags)
+
+
 def _parse_agent_connections_section(raw: object) -> AgentConnectionConfig:
     if raw is None:
         return AgentConnectionConfig()
@@ -198,6 +253,7 @@ class OiConfig:
     backup: BackupConfig = field(default_factory=BackupConfig)
     capabilities: CapabilitiesConfig = field(default_factory=CapabilitiesConfig)
     agent_connections: AgentConnectionConfig = field(default_factory=AgentConnectionConfig)
+    chat: ChatOptimizations = field(default_factory=ChatOptimizations)
     max_upload_mb: int = DEFAULT_MAX_UPLOAD_MB
     browser_idle_timeout_minutes: int = DEFAULT_BROWSER_IDLE_TIMEOUT_MINUTES
 
@@ -653,6 +709,16 @@ def load_config(path: Path) -> OiConfig:
             include_chats=_coerce_bool("OI_BACKUP_INCLUDE_CHATS", v, backup.include_chats),
         )
 
+    chat = _parse_chat_section(raw.get("chat"))
+    if v := os.environ.get("OI_CHAT"):
+        # OI_CHAT is a JSON object with any of the config.chat keys; invalid
+        # JSON raises so misconfiguration is caught at boot, not at first use.
+        try:
+            env_raw = json.loads(v)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"OI_CHAT is not valid JSON: {exc.msg}") from exc
+        chat = _parse_chat_section(env_raw)
+
     agent_connections = _parse_agent_connections_section(raw.get("agent_connections"))
     if v := os.environ.get("OI_AGENT_CONNECTION"):
         # OI_AGENT_CONNECTION is a JSON object with any of the
@@ -699,6 +765,7 @@ def load_config(path: Path) -> OiConfig:
         backup=backup,
         capabilities=capabilities,
         agent_connections=agent_connections,
+        chat=chat,
         max_upload_mb=int(merged.get("max_upload_mb", DEFAULT_MAX_UPLOAD_MB)),
         browser_idle_timeout_minutes=max(
             0,

@@ -118,8 +118,9 @@ async def _project_chunks(
         if history_tracker is not None:
             history_tracker.observe(chunk)
             from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
+            from oi.infra.optimizations import maybe_batch_flush  # noqa: PLC0415
 
-            await flush_tracker(history_tracker)
+            await maybe_batch_flush(history_tracker, flush_tracker)
         ctype: str = chunk.get("type", "")
         node: str | None = chunk.get("node")
 

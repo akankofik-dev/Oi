@@ -449,3 +449,20 @@ class RecordingTracker(TurnHistoryTracker):
 async def flush_tracker(tracker: TurnHistoryTracker | None) -> None:
     if isinstance(tracker, RecordingTracker):
         await tracker.flush()
+    # Flag-gated mmap cache invalidation: history was (possibly) written, so
+    # drop any cached snapshot for this thread. Best-effort and non-fatal;
+    # identity when the flag is OFF.
+    try:
+        from oi.infra.optimizations import get_manager, invalidate_thread  # noqa: PLC0415
+
+        manager = get_manager()
+        if manager is not None and getattr(manager.flags, "mmap_history", False):
+            thread_id: Any = None
+            if isinstance(tracker, RecordingTracker):
+                turn = tracker.turn
+                if isinstance(turn, dict):
+                    thread_id = turn.get("thread_id")
+            if thread_id:
+                invalidate_thread(str(thread_id))
+    except Exception:
+        logger.exception("flush_tracker: mmap invalidate failed (non-fatal)")
