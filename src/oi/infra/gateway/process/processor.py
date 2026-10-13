@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Literal
@@ -926,6 +927,9 @@ class GlobalProcessor:
         usage_tracker = UsageTracker()
         history_tracker = await self._begin_history(agent_id, thread_id, request)
         projection_state = StreamProjectionState()
+        # Turn-start timestamp for the auto-router's latency tracker
+        # (flag-gated; recorded in the finally block below).
+        turn_started_at = time.monotonic()
         try:
             async for ev in project_stream(
                 self._agent_manager,
@@ -983,9 +987,15 @@ class GlobalProcessor:
             # ON). Also drops the tracker's batch bookkeeping so the
             # BatchHistoryWriter does not retain finished IM trackers forever.
             from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
-            from oi.infra.optimizations import flush_batch  # noqa: PLC0415
+            from oi.infra.optimizations import (  # noqa: PLC0415
+                flush_batch,
+                record_turn_latency,
+            )
 
             await flush_batch(history_tracker, flush_tracker)
+            # Feed the auto-router's latency tracker (no-op unless the
+            # auto_router flag is ON; never raises).
+            record_turn_latency(agent_id, time.monotonic() - turn_started_at)
             if persist_failed_turn or (not stream_ok and not hitl_paused):
                 await self._persist_incomplete_turn(
                     thread_id, history_tracker, title_source=msg.text
@@ -1216,6 +1226,9 @@ class GlobalProcessor:
             meta=meta,
         )
         history_tracker = await self._begin_history(agent_id, thread_id, request)
+        # Turn-start timestamp for the auto-router's latency tracker
+        # (flag-gated; recorded in the finally block below).
+        turn_started_at = time.monotonic()
         await self._observe_turn_start_context(
             agent_id=agent_id,
             thread_id=thread_id,
@@ -1329,9 +1342,15 @@ class GlobalProcessor:
         finally:
             # Drain any batched history writes (no-op unless batch_db_writes is ON).
             from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
-            from oi.infra.optimizations import flush_batch  # noqa: PLC0415
+            from oi.infra.optimizations import (  # noqa: PLC0415
+                flush_batch,
+                record_turn_latency,
+            )
 
             await flush_batch(history_tracker, flush_tracker)
+            # Feed the auto-router's latency tracker (no-op unless the
+            # auto_router flag is ON; never raises).
+            record_turn_latency(agent_id, time.monotonic() - turn_started_at)
             self._finish_trajectory(thread_id=thread_id, usage=usage_tracker.usage, enabled=traj_on)
             if persist_failed_turn or not stream_ok:
                 await self._persist_incomplete_turn(

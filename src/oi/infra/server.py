@@ -429,6 +429,15 @@ class OiServer:
             plugin_manager=self.plugin_manager,
         )
 
+        # Provider pre-warming (flag-gated): warm the harness model cache in a
+        # background task so the first real turn never pays client-construction
+        # cost. No-op unless the provider_prewarm flag is ON; never blocks boot.
+        from oi.infra.optimizations import get_manager as _get_opt_manager  # noqa: PLC0415
+
+        _opt_manager = _get_opt_manager()
+        if _opt_manager is not None:
+            _opt_manager.schedule_prewarm(registry)
+
         from oi.infra.history.trajectory.live import TrajectoryLiveBus  # noqa: PLC0415
         from oi.infra.history.trajectory.service import TrajectoryService  # noqa: PLC0415
         from oi.infra.history.trajectory.store import TrajectoryStore  # noqa: PLC0415

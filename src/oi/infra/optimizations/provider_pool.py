@@ -1,160 +1,93 @@
-"""L1+L3: provider connection pool + pre-warm.
+"""L1+L3: provider pre-warming for the harness model cache.
 
-Creating an LLM client (auth, session, model handshake) on every agent switch
-is a cold-start tax. :class:`ProviderConnectionPool` caches clients keyed by
-``(provider, model)`` and can keep a few idle connections warm in the
-background. Pooling is lazy — nothing is created until first use — and
-pre-warming runs in a background task so it never slows server startup.
+AUDIT NOTE (2026-10-14, multi-repo audit): an earlier revision of this module
+implemented its own per-(provider, model) client cache
+(``ProviderConnectionPool``). That cache was REMOVED as redundant:
+oi-harness's ``ChatModelFactory`` (``oi_harness/llm/factory.py``) already
+caches ``BaseChatModel`` instances per ``(provider, model_id)``, shared
+across agents through ``AgentManager.shared_factory``. A second Oi-side
+cache could not add value — and pre-building its own clients would have
+created orphan clients the harness never uses.
 
-WIRING NOTE (2026-10-14): this module is intentionally NOT hooked into the
-hot path. LLM client instantiation lives inside the external ``oi-harness``
-package (``HarnessAgentManager``'s shared model factory, fed via
-``sync_providers_to_harness`` with provider *configs*); this repository
-contains no per-request client factory call site to pool (the only direct
-``ChatOpenAI(...)`` construction is the one-off connectivity probe in
-``providers/probe.py``). Hooking would require changing the external
-oi-harness package, which is out of scope. The pool remains available
-standalone via :meth:`OptimizationManager.provider_pool` for future use —
-e.g. if oi-harness ever accepts an injected client factory, or for the
-probe/prewarm paths.
+What remains valuable, and what this module now does, is PRE-WARMING the
+harness cache: building each configured model client once at startup (in a
+background task, never blocking boot) so the first real turn never pays
+client-construction cost. This uses only public harness APIs
+(``shared_factory``, ``list_refs()``, ``get_chat_model()``); no changes to
+oi-harness are required.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-#: Factory invoked as ``factory(provider, model)``; may be sync or async.
-ClientFactory = Callable[[str, str], Any]
-
-#: How many idle connections pre-warm keeps ready per (provider, model).
-PREWARM_IDLE_COUNT = 3
+#: Hard references to in-flight pre-warm tasks so they are not GC'd.
+_PREWARM_TASKS: set[asyncio.Task[None]] = set()
 
 
-@dataclass
-class _PoolEntry:
-    client: Any
-    in_use: int = 0
+async def prewarm_harness_factory(agent_manager: Any) -> dict[str, str]:
+    """Warm the harness ``ChatModelFactory`` cache for every enabled model.
 
+    For each ``provider/model`` ref known to the shared factory, builds (and
+    thereby caches) the client via the public ``get_chat_model()`` escape
+    hatch. Construction runs in a worker thread so the event loop is never
+    blocked; per-ref failures are recorded, never raised.
 
-@dataclass
-class ProviderConnectionPool:
-    """Cache LLM clients per ``(provider, model)`` with idle pre-warming."""
+    Returns a mapping of ``model_ref -> "ok" | "error: ..."``.
+    """
+    results: dict[str, str] = {}
+    try:
+        harness_manager = getattr(agent_manager, "harness_manager", None)
+        if harness_manager is None:
+            logger.debug("provider prewarm: no harness manager available")
+            return results
+        factory = getattr(harness_manager, "shared_factory", None)
+        if factory is None:
+            logger.debug("provider prewarm: no shared factory available")
+            return results
+        refs = factory.list_refs(enabled_only=True)
+    except Exception:
+        logger.exception("provider prewarm: failed to list model refs")
+        return results
 
-    prewarm_idle_count: int = PREWARM_IDLE_COUNT
-    _entries: dict[tuple[str, str], _PoolEntry] = field(
-        default_factory=dict, init=False, repr=False
-    )
-    _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
-    _prewarm_tasks: set[asyncio.Task[None]] = field(
-        default_factory=set, init=False, repr=False
-    )
-
-    def _key(self, provider: str, model: str) -> tuple[str, str]:
-        return (provider.strip().lower(), model.strip())
-
-    async def _build(self, factory: ClientFactory, provider: str, model: str) -> Any:
-        client = factory(provider, model)
-        if asyncio.iscoroutine(client):
-            client = await client
-        return client
-
-    async def get_or_create(
-        self, provider: str, model: str, factory: ClientFactory
-    ) -> Any:
-        """Return the cached client for ``(provider, model)``, creating it once."""
-        key = self._key(provider, model)
-        async with self._lock:
-            entry = self._entries.get(key)
-            if entry is None:
-                client = await self._build(factory, provider, model)
-                entry = _PoolEntry(client=client)
-                self._entries[key] = entry
-            entry.in_use += 1
-            return entry.client
-
-    async def release(self, provider: str, model: str) -> None:
-        """Mark one use of the cached client as finished (best-effort)."""
-        key = self._key(provider, model)
-        async with self._lock:
-            entry = self._entries.get(key)
-            if entry is not None and entry.in_use > 0:
-                entry.in_use -= 1
-
-    def prewarm(
-        self,
-        provider: str,
-        model: str,
-        factory: ClientFactory,
-        *,
-        count: int | None = None,
-    ) -> None:
-        """Warm ``count`` idle clients in the background (fire-and-forget).
-
-        Safe to call at startup: the work happens in a background task and
-        never blocks the caller. Duplicate pre-warm requests for the same key
-        are coalesced.
-        """
+    for ref in refs:
         try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            logger.debug("provider_pool: no running loop; skipping prewarm")
-            return
-        key = self._key(provider, model)
-        if key in self._entries:
-            return  # already warm
+            await asyncio.to_thread(factory.get_chat_model, ref)
+            results[ref] = "ok"
+        except Exception as exc:
+            results[ref] = f"error: {exc}"
+            logger.warning("provider prewarm: %s failed: %s", ref, exc)
+    return results
 
-        async def _warm() -> None:
-            try:
-                await self.get_or_create(provider, model, factory)
-                await self.release(provider, model)
-            except Exception:
-                logger.exception("provider_pool: prewarm failed for %s/%s", provider, model)
 
-        task = loop.create_task(_warm())
-        self._prewarm_tasks.add(task)
-        task.add_done_callback(self._prewarm_tasks.discard)
+def schedule_prewarm(agent_manager: Any) -> None:
+    """Fire-and-forget :func:`prewarm_harness_factory` (safe at startup).
 
-    async def evict(self, provider: str, model: str) -> None:
-        """Drop the cached client (e.g. after auth failure); closes if closable."""
-        key = self._key(provider, model)
-        async with self._lock:
-            entry = self._entries.pop(key, None)
-        if entry is None:
-            return
-        close = getattr(entry.client, "aclose", None) or getattr(entry.client, "close", None)
-        if close is not None:
-            try:
-                result = close()
-                if asyncio.iscoroutine(result):
-                    await result
-            except Exception:
-                logger.exception("provider_pool: error closing evicted client")
+    No running event loop (e.g. called outside async context) → silently
+    skipped. The task is best-effort: failures are logged, never raised.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        logger.debug("provider prewarm: no running loop; skipping")
+        return
 
-    async def close_all(self) -> None:
-        """Close every cached client and cancel pending pre-warm tasks."""
-        for task in list(self._prewarm_tasks):
-            task.cancel()
-        async with self._lock:
-            entries = list(self._entries.values())
-            self._entries.clear()
-        for entry in entries:
-            close = getattr(entry.client, "aclose", None) or getattr(
-                entry.client, "close", None
+    async def _run() -> None:
+        try:
+            results = await prewarm_harness_factory(agent_manager)
+            warmed = sum(1 for v in results.values() if v == "ok")
+            logger.info(
+                "provider prewarm: warmed %d/%d model refs",
+                warmed,
+                len(results),
             )
-            if close is not None:
-                try:
-                    result = close()
-                    if asyncio.iscoroutine(result):
-                        await result
-                except Exception:
-                    logger.exception("provider_pool: error closing pooled client")
+        except Exception:
+            logger.exception("provider prewarm: background task failed")
 
-    @property
-    def cached_count(self) -> int:
-        """Number of cached (provider, model) clients (introspection)."""
-        return len(self._entries)
+    task = loop.create_task(_run())
+    _PREWARM_TASKS.add(task)
+    task.add_done_callback(_PREWARM_TASKS.discard)

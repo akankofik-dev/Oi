@@ -141,18 +141,26 @@ class ChatOptimizations:
     like the unoptimized pipeline. Enable flags one at a time and restart.
     ``auto_router_mode`` selects the router behaviour ("off"/"suggest"/"auto")
     and only takes effect when ``auto_router`` is True.
+
+    Dormant flags (accepted but currently no-ops, kept as on-ramps):
+    ``zero_copy_stream`` — the stream_pipeline module is intentionally not
+    wired (see its docstring); the flag will gate it if a safe hook point
+    is found in the future.
+
+    Removed 2026-10-14 (multi-repo audit): ``agent_pooling`` and
+    ``predictive_prewarm`` were never wired to any code path. The pooling
+    they promised duplicates oi-harness's ChatModelFactory cache; the
+    useful remainder (pre-warming) is now ``provider_prewarm``.
     """
 
     batch_db_writes: bool = False
     async_history: bool = False
     smart_context_switch: bool = False
-    agent_pooling: bool = False
     semantic_compress: bool = False
     auto_router: bool = False
     zero_copy_stream: bool = False
     mmap_history: bool = False
     provider_prewarm: bool = False
-    predictive_prewarm: bool = False
     auto_router_mode: str = "suggest"
 
 
@@ -160,13 +168,11 @@ _CHAT_FLAG_FIELDS = (
     "batch_db_writes",
     "async_history",
     "smart_context_switch",
-    "agent_pooling",
     "semantic_compress",
     "auto_router",
     "zero_copy_stream",
     "mmap_history",
     "provider_prewarm",
-    "predictive_prewarm",
 )
 
 

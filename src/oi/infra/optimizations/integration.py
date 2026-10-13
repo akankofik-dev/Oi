@@ -8,10 +8,14 @@ actually runs.
 Process wiring:
 
 * ``server.py`` calls :func:`configure` once at startup with
-  ``config.chat`` (:class:`oi.config.ChatOptimizations`).
+  ``config.chat`` (:class:`oi.config.ChatOptimizations`), then
+  :meth:`OptimizationManager.schedule_prewarm` with the ``AgentManager``
+  (warms the harness model cache in the background when the
+  ``provider_prewarm`` flag is ON).
 * Hot paths (``processor.py``, ``stream_project.py``, ``harness_request.py``)
   use the module-level helpers :func:`maybe_batch_flush`,
-  :func:`flush_batch` and :meth:`OptimizationManager.compress_messages`,
+  :func:`flush_batch`, :func:`record_turn_latency` and
+  :meth:`OptimizationManager.compress_messages`,
   which are no-ops delegating to the original behaviour when the manager is
   unconfigured or the relevant flag is OFF.
 """
@@ -25,7 +29,7 @@ from oi.infra.optimizations.auto_router import SmartAutoRouter
 from oi.infra.optimizations.batch_writer import BatchHistoryWriter, FlushFn
 from oi.infra.optimizations.context_compressor import compress_request_messages
 from oi.infra.optimizations.mmap_history import MmapHistoryReader
-from oi.infra.optimizations.provider_pool import ProviderConnectionPool
+from oi.infra.optimizations.provider_pool import schedule_prewarm as _schedule_prewarm
 from oi.infra.optimizations.stream_pipeline import StreamPipeline
 
 logger = logging.getLogger(__name__)
@@ -41,7 +45,6 @@ class OptimizationManager:
         # package free of config imports (no circular imports).
         self.flags = flags
         self._batch_writer: BatchHistoryWriter | None = None
-        self._provider_pool: ProviderConnectionPool | None = None
         self._stream_pipeline: StreamPipeline | None = None
         self._auto_router: SmartAutoRouter | None = None
         self._mmap_reader: MmapHistoryReader | None = None
@@ -54,11 +57,17 @@ class OptimizationManager:
             self._batch_writer = BatchHistoryWriter()
         return self._batch_writer
 
-    @property
-    def provider_pool(self) -> ProviderConnectionPool:
-        if self._provider_pool is None:
-            self._provider_pool = ProviderConnectionPool()
-        return self._provider_pool
+    def schedule_prewarm(self, agent_manager: Any) -> None:
+        """Warm the harness model cache in the background (flag-gated).
+
+        No-op unless the ``provider_prewarm`` flag is ON. Safe to call at
+        server startup: the work runs in a background task and never blocks
+        the caller. See :mod:`oi.infra.optimizations.provider_pool` for why
+        pre-warming targets the harness factory cache directly.
+        """
+        if not bool(getattr(self.flags, "provider_prewarm", False)):
+            return
+        _schedule_prewarm(agent_manager)
 
     @property
     def stream_pipeline(self) -> StreamPipeline:
@@ -103,13 +112,11 @@ class OptimizationManager:
             "batch_db_writes",
             "async_history",
             "smart_context_switch",
-            "agent_pooling",
             "semantic_compress",
             "auto_router",
             "zero_copy_stream",
             "mmap_history",
             "provider_prewarm",
-            "predictive_prewarm",
         ):
             if getattr(self.flags, name, False):
                 return True
@@ -171,6 +178,23 @@ async def flush_batch(tracker: Any, flush_fn: FlushFn | None = None) -> None:
         flush_fn = flush_tracker
     await manager.batch_writer.flush(tracker, flush_fn)
     manager.batch_writer.drop(tracker)
+
+
+def record_turn_latency(agent_id: str, seconds: float) -> None:
+    """Feed a completed turn's latency into the auto-router's tracker.
+
+    Flag-gated: no-op unless the ``auto_router`` flag is ON. Best-effort and
+    never raises — latency data is advisory only. Call at turn end (after the
+    agent that actually handled the turn is known) so ``auto`` mode can
+    prefer the fastest known agent for future turns.
+    """
+    manager = _MANAGER
+    if manager is None or not getattr(manager.flags, "auto_router", False):
+        return
+    try:
+        manager.auto_router.record_latency(agent_id, seconds)
+    except Exception:
+        logger.exception("record_turn_latency failed (non-fatal)")
 
 
 FlushFnT = Callable[[Any], Awaitable[None]]

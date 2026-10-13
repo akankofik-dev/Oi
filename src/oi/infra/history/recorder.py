@@ -452,6 +452,12 @@ async def flush_tracker(tracker: TurnHistoryTracker | None) -> None:
     # Flag-gated mmap cache invalidation: history was (possibly) written, so
     # drop any cached snapshot for this thread. Best-effort and non-fatal;
     # identity when the flag is OFF.
+    # AUDIT NOTE (2026-10-14): invalidation runs on every flush (i.e. every
+    # ~5 chunks while batching). This is intentional, not a bug: the only
+    # reader of export_messages is the history API endpoint, which may be hit
+    # mid-turn — invalidating only at turn end would serve stale snapshots
+    # during streaming. The unlink itself is a cheap syscall; the cache stays
+    # useful for reads between turns.
     try:
         from oi.infra.optimizations import get_manager, invalidate_thread  # noqa: PLC0415
 

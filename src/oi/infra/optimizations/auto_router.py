@@ -75,7 +75,14 @@ def classify_intent(text: str) -> Intent:
 
 @dataclass
 class LatencyTracker:
-    """Per-agent EMA of turn latency (seconds). Lower is faster."""
+    """Per-agent EMA of turn latency (seconds). Lower is faster.
+
+    Fed from real turn timings by ``processor.py`` (both the IM ``__call__``
+    and WS ``iter_turn_chunks`` paths record turn duration via
+    ``integration.record_turn_latency`` when the ``auto_router`` flag is ON).
+    Until data accrues, :meth:`fastest` returns None and routing keeps the
+    current agent — a safe no-op.
+    """
 
     alpha: float = 0.3
     _ema: dict[str, float] = field(default_factory=dict, init=False, repr=False)

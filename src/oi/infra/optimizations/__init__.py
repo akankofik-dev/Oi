@@ -37,6 +37,7 @@ from oi.infra.optimizations.integration import (
     flush_batch,
     get_manager,
     maybe_batch_flush,
+    record_turn_latency,
     reset_manager,
 )
 from oi.infra.optimizations.mmap_history import (
@@ -44,7 +45,10 @@ from oi.infra.optimizations.mmap_history import (
     default_cache_dir,
     invalidate_thread,
 )
-from oi.infra.optimizations.provider_pool import ProviderConnectionPool
+from oi.infra.optimizations.provider_pool import (
+    prewarm_harness_factory,
+    schedule_prewarm,
+)
 from oi.infra.optimizations.stream_pipeline import StreamPipeline
 
 __all__ = [
@@ -53,7 +57,6 @@ __all__ = [
     "LatencyTracker",
     "MmapHistoryReader",
     "OptimizationManager",
-    "ProviderConnectionPool",
     "RoutingDecision",
     "SmartAutoRouter",
     "StreamPipeline",
@@ -69,7 +72,10 @@ __all__ = [
     "get_manager",
     "invalidate_thread",
     "maybe_batch_flush",
+    "prewarm_harness_factory",
+    "record_turn_latency",
     "reset_manager",
+    "schedule_prewarm",
     "smart_context_switch",
     "summarize_tool_messages",
 ]
