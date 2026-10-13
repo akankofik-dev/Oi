@@ -10,7 +10,7 @@ import shutil
 import threading
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager, nullcontext, suppress
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -1326,8 +1326,33 @@ class AgentManager:
             self._apply_pending_bootstrap_graph_refresh(agent_id)
             req = self._prepare_stream_request(agent_id, request)
             with hitl_thread_scope(thread_id_from_request(req)):
-                async for chunk in self._harness_manager.stream(agent_id, cast(Any, req)):
-                    yield chunk
+                # Model-routing events (failover/fallback) are collected by the
+                # middleware via a contextvar. Drain them after the stream so
+                # the frontend badge can show the model that ACTUALLY answered
+                # this turn instead of the intended target. Fail-open: any
+                # routing failure must never break the stream or change its
+                # error behavior.
+                try:
+                    routing_cm: Any = routing_event_scope()
+                except Exception:
+                    logger.debug(
+                        "routing_event_scope unavailable; streaming without it",
+                        exc_info=True,
+                    )
+                    routing_cm = nullcontext(None)
+                with routing_cm as report:
+                    async for chunk in self._harness_manager.stream(agent_id, cast(Any, req)):
+                        yield chunk
+                    if report is not None:
+                        try:
+                            for routing_chunk in routing_report_to_chunks(report):
+                                yield routing_chunk
+                        except Exception:
+                            logger.debug(
+                                "routing report drain failed for agent %s",
+                                agent_id,
+                                exc_info=True,
+                            )
             self._apply_pending_bootstrap_graph_refresh(agent_id)
 
     async def call(self, agent_id: str, request: dict[str, Any]) -> dict[str, Any]:
@@ -3231,38 +3256,12 @@ class AgentManager:
         from oi.infra.agents.middleware.binary_read_guard import BinaryReadGuardMiddleware
         from oi.infra.agents.middleware.browser_profile import BrowserProfileMiddleware
         from oi.infra.agents.middleware.oi_ui_offload import OiUiOffloadMiddleware
-        from oi.infra.agents.middleware.llm_resilience import (
-            CircuitBreakerMiddleware,
-            LlmTimeoutMiddleware,
-        )
-        from oi.infra.agents.middleware.provider_failover import (
-            ProviderFailoverMiddleware,
-        )
-        from oi.infra.agents.middleware.semantic_cache import SemanticCacheMiddleware
         from oi.infra.agents.middleware.reasoning import ReasoningRequestMiddleware
         from oi.infra.agents.middleware.context_guard import ContextGuardMiddleware
         from oi.infra.agents.middleware.thread_artifacts import ThreadArtifactsMiddleware
         from oi.infra.agents.middleware.token_quota import TokenQuotaMiddleware
         from oi.infra.agents.middleware.workspace_image import (
             WorkspaceImageMaterializeMiddleware,
-        )
-        from oi.infra.agents.settings.runtime_limits import (
-            agent_circuit_breaker_cooldown,
-            agent_circuit_breaker_enabled,
-            agent_circuit_breaker_threshold,
-            agent_failover_enabled,
-            agent_failover_max_attempts,
-            agent_failover_max_cycles,
-            agent_failover_models,
-            agent_failover_persistent_retry,
-            agent_failover_retry_backoff_base,
-            agent_failover_slow_threshold,
-            agent_failover_unhealthy_after,
-            agent_llm_timeout,
-            agent_semantic_cache_enabled,
-            agent_semantic_cache_max_entries,
-            agent_semantic_cache_threshold,
-            agent_semantic_cache_ttl,
         )
         from oi.infra.knowledge.hint import KnowledgeSearchHintMiddleware
 
