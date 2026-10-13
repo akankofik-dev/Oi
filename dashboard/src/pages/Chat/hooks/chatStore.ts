@@ -23,7 +23,6 @@ import {
   parseHarnessChunk,
   streamSpeakerId,
   type HarnessChunk,
-  type ModelRoutingChunk,
   type ToolCallChunk,
   type UsageChunk,
 } from "../../../utils/parseHarnessChunk";
@@ -1167,47 +1166,6 @@ function findLastToolMessageIndex(
   return -1;
 }
 
-/**
- * Stamp the model that ACTUALLY answered this turn (failover-aware) onto
- * the turn's answer bubble. The backend appends a ``model_routing`` /
- * ``selected`` chunk after the stream; the UI model badge reads this
- * per-turn stamp instead of the agent's globally configured model.
- * Fail-open: never throws, never creates messages.
- */
-function stampModelRouting(
-  state: SessionStreamState,
-  chunk: ModelRoutingChunk,
-  sessionId?: string,
-  speaker?: string,
-): void {
-  try {
-    if (chunk.event !== "selected") return;
-    const model = (chunk.model || "").trim();
-    if (!model) return;
-    const hostId = sessionHostAgentId(state, sessionId);
-    const teamRoom = Boolean(state.isTeamRoom);
-    // Routing chunks arrive after the harness `done`, so the bubble is
-    // already finalized — scan back to the last assistant text bubble of
-    // this speaker in the current turn (stop at the previous user message).
-    for (let i = state.messages.length - 1; i >= 0; i--) {
-      const m = state.messages[i];
-      if (m.role === "user") break;
-      if (m.role !== "assistant" || m.toolData) continue;
-      if (!sameStreamingSpeaker(m.speakerAgentId, speaker, hostId, teamRoom))
-        continue;
-      if (m.actualModel === model) return;
-      state.messages = [
-        ...state.messages.slice(0, i),
-        { ...m, actualModel: model },
-        ...state.messages.slice(i + 1),
-      ];
-      return;
-    }
-  } catch {
-    // fail-open: badge stamping must never break the stream
-  }
-}
-
 function handleHarnessChunk(
   state: SessionStreamState,
   chunk: HarnessChunk,
@@ -1344,9 +1302,6 @@ function handleHarnessChunk(
     case "state_update":
     case "state_snapshot":
       updateContextUsageFromChunk(state, chunk);
-      break;
-    case "model_routing":
-      stampModelRouting(state, chunk, sessionId, speaker);
       break;
     case "custom":
       // Debug-only — phase 15 will add a debug toggle that surfaces these.
