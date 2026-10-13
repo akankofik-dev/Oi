@@ -117,7 +117,7 @@ oi = "oi.cli.main:cli"
 # pinned by tag so a fresh clone resolves the same build every time. Bump a tag
 # in that repo first, then update it here. See docs/installation-audit-issues.md.
 [tool.uv.sources]
-oi-harness = { git = "https://github.com/akankofik-dev/oi-harness.git", tag = "v1.0.1" }
+oi-harness = { git = "https://github.com/akankofik-dev/oi-harness.git", tag = "v1.0.3" }
 oi-gateway = { git = "https://github.com/akankofik-dev/oi-gateway.git", tag = "v1.0.0" }
 oi-memory = { git = "https://github.com/akankofik-dev/oi-memory.git", tag = "v1.0.0" }
 oi-browser = { git = "https://github.com/akankofik-dev/oi-browser.git", tag = "v1.0.1" }
