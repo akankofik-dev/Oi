@@ -117,6 +117,16 @@ export function useDashboardPushToast(): void {
         ) {
           return;
         }
+        // Handle model_changed event: refresh agent data for live-update.
+        // Sent by backend when active model changes via API.
+        if (
+          raw &&
+          typeof raw === "object" &&
+          (raw as { type?: string }).type === "model_changed"
+        ) {
+          void refreshRef.current({ silent: true });
+          return;
+        }
         const parsed = parseDashboardPushFrame(raw);
         if (!parsed) return;
         void refreshRef.current({ silent: true });
