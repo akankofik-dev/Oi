@@ -288,7 +288,7 @@ _pkg "oi-gateway"     "$_C_TEAL"  "oi-gateway @ git+https://github.com/akankofik
 _pkg "oi-browser"     "$_C_BLUE"  "oi-browser @ git+https://github.com/akankofik-dev/oi-browser.git@v1.0.2"
 # oi-harness: depend ke oi-memory & oi-browser (ga ada di PyPI)
 # Install --no-deps, lalu install deps PyPI-nya manual
-_pkg "oi-harness"     "$_C_AMBER" --no-deps "oi-harness @ git+https://github.com/akankofik-dev/oi-harness.git@v1.0.1"
+_pkg "oi-harness"     "$_C_AMBER" --no-deps "oi-harness @ git+https://github.com/akankofik-dev/oi-harness.git@v1.0.2"
 _pkg "oi-harness deps" "$_C_GREEN" \
     "deepagents>=0.7,<0.8" "httpx>=0.27" "langchain-anthropic>=1.5.4,<2.0" \
     "langchain-core>=1.5.0,<2.0" "langchain-mcp-adapters>=0.3.0" \
@@ -329,35 +329,13 @@ if [ -f "$OI_PID_FILE" ]; then
     fi
     rm -f "$OI_PID_FILE"
 fi
-# Fallback: matikan SEMUA proses 'oi run' yang masih jalan (mis. start manual tanpa PID file).
-for _p in $(pgrep -f "oi run" 2>/dev/null || true); do
-    if [ "$_p" != "$$" ]; then
-        printf '  %b%s (PID %s)%s%b\n' "$_C_DIM" "Menghentikan proses oi run sisa" "$_p" "$_G_ELL" "$_C_RESET" >&2
-        kill "$_p" 2>/dev/null || true
-    fi
-done
-sleep 2
-for _p in $(pgrep -f "oi run" 2>/dev/null || true); do
-    if [ "$_p" != "$$" ]; then
-        kill -9 "$_p" 2>/dev/null || true
-    fi
-done
 
 _step_begin "  " "Starting server"
 nohup oi run --host 127.0.0.1 --port "$OI_PORT" > "$HOME/oi-server.log" 2>&1 &
 echo $! > "$OI_PID_FILE"
-# Health check: coba 12x dengan interval 5 detik (total 60 detik).
-# Server butuh waktu untuk startup, jangan lapor gagal terlalu cepat.
-_HEALTH_OK=0
-for _i in $(seq 1 12); do
-    sleep 5
-    if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$OI_PORT/" 2>/dev/null | grep -q "200\|302"; then
-        _HEALTH_OK=1
-        break
-    fi
-done
+sleep 5
 
-if [ "$_HEALTH_OK" = "1" ]; then
+if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$OI_PORT/" | grep -q "200\|302"; then
     _step_end
     printf '\n' >&2
     printf '  %b%s%b Oi berjalan di %bhttp://127.0.0.1:%s%b\n' "$_C_GREEN" "$_G_OK" "$_C_RESET" "$_C_BOLD" "$OI_PORT" "$_C_RESET" >&2
