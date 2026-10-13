@@ -381,7 +381,16 @@ _step_end "$_C_GREEN"
 _step_begin "  " "Initializing Oi"
 _skipped=""
 if [ ! -d "$HOME/.oi" ]; then
+    # Generate random admin password (meets policy: letters + digits, 12 chars)
+    _OI_ADMIN_PW=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 12)
+    # Ensure has both letter and digit
+    _OI_ADMIN_PW="${_OI_ADMIN_PW}a1"
+    export OI_ADMIN_PASSWORD="$_OI_ADMIN_PW"
     _quiet oi init --yes --admin-username admin
+    # Save password for user
+    printf '%s
+' "$_OI_ADMIN_PW" > "$HOME/.oi-admin-password.txt"
+    chmod 600 "$HOME/.oi-admin-password.txt"
 else
     _skipped=1
 fi
