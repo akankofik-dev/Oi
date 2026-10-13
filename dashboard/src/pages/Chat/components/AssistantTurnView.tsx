@@ -14,6 +14,7 @@ import { collectChatFilePaths } from "../hooks/useChatFileDetection";
 import { layoutAssistantTurnHitl } from "../utils/layoutAssistantTurnHitl";
 import { useAgent } from "../../../context/AgentContext";
 import { TodoProgressPanel } from "../../../components/TodoProgressPanel";
+import TurnModelBadge from "./TurnModelBadge";
 import {
   collectWriteTodosFromMessages,
   isWriteTodosToolName,
@@ -96,10 +97,17 @@ export default function AssistantTurnView({
   compactProcess = false,
 }: AssistantTurnViewProps) {
   const { t } = useTranslation();
-  const { activeAgentId } = useAgent();
+  const { activeAgentId, agents, activeAgent } = useAgent();
   const agentId = agentIdProp ?? activeAgentId;
   const speakerAgentId =
     messages.map((item) => messageSpeakerId(item)).find(Boolean) || agentId;
+
+  // Model badge: show the resolved model for the agent answering this turn.
+  // Uses resolved_model from backend (handles 'auto' mode correctly).
+  const turnModelRef = useMemo(() => {
+    const speaker = agents?.find((a) => a.agent_id === speakerAgentId);
+    return speaker?.resolved_model ?? speaker?.default_model ?? activeAgent?.resolved_model ?? null;
+  }, [agents, speakerAgentId, activeAgent]);
 
   const speakerLive = turnHasLiveSpeaker(messages, liveSpeakers);
   const hasStreamingMsg = messages.some((m) => m.status === "streaming");
@@ -195,6 +203,9 @@ export default function AssistantTurnView({
 
   return (
     <div className={styles.assistantTurn}>
+      <div className="turnModelRow">
+        <TurnModelBadge modelRef={turnModelRef} />
+      </div>
       {todoAtTop ? <div className={styles.turnInset}>{todoAtTop}</div> : null}
       {segmentProcess.map(({ split, hitl }, idx) => {
         const showProcess = !compactProcess && hasProcessContent(split);
