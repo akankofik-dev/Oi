@@ -98,6 +98,19 @@ logger = logging.getLogger(__name__)
 
 
 def _model_retry_on_failure(exc: Exception) -> str:
+    # Fail-fast errors (circuit breaker open, failover exhausted, timeout)
+    # harus langsung ke user, jangan diubah jadi retry prompt yang membingungkan.
+    from oi.infra.agents.middleware.llm_resilience import (
+        CircuitOpenError,
+        LlmTimeoutError,
+    )
+    from oi.infra.agents.middleware.provider_failover import (
+        FailoverExhaustedError,
+    )
+
+    if isinstance(exc, (CircuitOpenError, FailoverExhaustedError, LlmTimeoutError)):
+        raise exc
+
     # Feed a specific, model-visible prompt instead of raising. Inbox jobs still
     # mark failed when the reply carries MODEL_RETRY_FAILURE_MARK.
     from oi.i18n.domains.stream import model_retry_failure_prompt
@@ -1299,6 +1312,11 @@ class AgentManager:
         """Stream harness chunks (Langfuse tracing handled inside oi-harness)."""
         if self._harness_manager is None:
             raise self._unavailable_error(agent_id)
+
+        from oi.infra.agents.middleware.routing_events import (
+            routing_event_scope,
+            routing_report_to_chunks,
+        )
 
         thread_id = str(request.get("thread_id") or "")
         async with (
@@ -3213,11 +3231,38 @@ class AgentManager:
         from oi.infra.agents.middleware.binary_read_guard import BinaryReadGuardMiddleware
         from oi.infra.agents.middleware.browser_profile import BrowserProfileMiddleware
         from oi.infra.agents.middleware.oi_ui_offload import OiUiOffloadMiddleware
+        from oi.infra.agents.middleware.llm_resilience import (
+            CircuitBreakerMiddleware,
+            LlmTimeoutMiddleware,
+        )
+        from oi.infra.agents.middleware.provider_failover import (
+            ProviderFailoverMiddleware,
+        )
+        from oi.infra.agents.middleware.semantic_cache import SemanticCacheMiddleware
         from oi.infra.agents.middleware.reasoning import ReasoningRequestMiddleware
+        from oi.infra.agents.middleware.context_guard import ContextGuardMiddleware
         from oi.infra.agents.middleware.thread_artifacts import ThreadArtifactsMiddleware
         from oi.infra.agents.middleware.token_quota import TokenQuotaMiddleware
         from oi.infra.agents.middleware.workspace_image import (
             WorkspaceImageMaterializeMiddleware,
+        )
+        from oi.infra.agents.settings.runtime_limits import (
+            agent_circuit_breaker_cooldown,
+            agent_circuit_breaker_enabled,
+            agent_circuit_breaker_threshold,
+            agent_failover_enabled,
+            agent_failover_max_attempts,
+            agent_failover_max_cycles,
+            agent_failover_models,
+            agent_failover_persistent_retry,
+            agent_failover_retry_backoff_base,
+            agent_failover_slow_threshold,
+            agent_failover_unhealthy_after,
+            agent_llm_timeout,
+            agent_semantic_cache_enabled,
+            agent_semantic_cache_max_entries,
+            agent_semantic_cache_threshold,
+            agent_semantic_cache_ttl,
         )
         from oi.infra.knowledge.hint import KnowledgeSearchHintMiddleware
 
@@ -3228,6 +3273,55 @@ class AgentManager:
         # OiUiOffload stays innermost so every outer middleware observes the
         # slimmed content consistently; it only touches oi_ui plugin envelopes,
         # disjoint from the file-tool results ThreadArtifacts cares about.
+        # Provider failover helpers: auto-discover usable "provider/model"
+        # refs for fallback, and build fallback chat models through the
+        # shared harness factory (same cache the router uses, so identity
+        # matching works and no duplicate HTTP clients are created).
+        def _usable_model_refs() -> list[str]:
+            from oi.infra.agents.providers.model_flags import (  # noqa: PLC0415
+                is_chat_eligible_model,
+            )
+
+            refs: list[str] = []
+            try:
+                rows = self._providers.iter_usable_rows()
+            except Exception:
+                return refs
+            for prow in rows:
+                try:
+                    models = prow.get_models()
+                except Exception:
+                    continue
+                for m in models:
+                    try:
+                        if not is_chat_eligible_model(
+                            m,
+                            provider_name=prow.name,
+                            provider_api_key=prow.api_key,
+                        ):
+                            continue
+                    except Exception:
+                        continue
+                    model_id = str(m.get("id") or "").strip()
+                    if model_id:
+                        refs.append(f"{prow.name}/{model_id}")
+            return refs
+
+        def _build_chat_model(ref: str) -> Any:
+            harness_manager = self._harness_manager
+            factory = (
+                harness_manager.shared_factory
+                if harness_manager is not None
+                else None
+            )
+            if factory is None:
+                raise RuntimeError(
+                    "provider failover: harness model factory unavailable"
+                )
+            return factory.get_chat_model(ref)
+
+        # LLM resilience middleware DINONAKTIFKAN sementara (menyebabkan hang).
+        # Kembali ke perilaku original.
         agent_middleware: list[Any] = [
             *plugin_middleware,
             TokenQuotaMiddleware(
@@ -3235,6 +3329,9 @@ class AgentManager:
                 usage_repo=self._repos.usage_repo,
             ),
             ReasoningRequestMiddleware(),
+            # Context guard: warn at 75%, critical at 90% to prevent
+            # "context 100% full" errors. Read-only, never modifies request.
+            ContextGuardMiddleware(),
             KnowledgeSearchHintMiddleware(),
             BrowserProfileMiddleware(),
             BinaryReadGuardMiddleware(),
