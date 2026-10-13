@@ -1590,30 +1590,4 @@
   }
 }
 
-// Model badge: shows which model answered this turn.
-.turnModelRow {
-  display: flex;
-  align-items: center;
-  min-height: 0;
 
-  &:empty {
-    display: none;
-  }
-}
-
-.turnModelBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--fn-text-tertiary);
-  margin-bottom: 2px;
-  max-width: 100%;
-}
-
-.turnModelBadgeText {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
