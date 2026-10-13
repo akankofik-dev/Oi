@@ -20,7 +20,7 @@ OI_VERSION="1.0.6"
 OI_WHEEL_URL="https://github.com/akankofik-dev/Oi/releases/download/v${OI_VERSION}/oi-${OI_VERSION}-py3-none-any.whl"
 # SHA-256 wheel yang diharapkan (kosong = verifikasi dilewati).
 # Isi dengan hash resmi release bila tersedia, mis. OI_WHEEL_SHA256="abc123...".
-OI_WHEEL_SHA256="${OI_WHEEL_SHA256:-7c920eb83fb4e57309f12d4e030ae377648d882d007086d30ca194fa4a257859}"
+OI_WHEEL_SHA256="${OI_WHEEL_SHA256:-dc4c817498eb53dd7993afff2a1a397283f3bde95464b529552ce28b985ce396}"
 VENV_DIR="$HOME/oi-venv"
 OI_PORT="8088"
 OI_LOG="$HOME/oi-install.log"
@@ -348,7 +348,7 @@ _pkg "oi-gateway"     "$_C_TEAL"  "oi-gateway @ git+https://github.com/akankofik
 _pkg "oi-browser"     "$_C_BLUE"  "oi-browser @ git+https://github.com/akankofik-dev/oi-browser.git@v1.0.2"
 # oi-harness: depend ke oi-memory & oi-browser (ga ada di PyPI)
 # Install --no-deps, lalu install deps PyPI-nya manual
-_pkg "oi-harness"     "$_C_AMBER" --no-deps "oi-harness @ git+https://github.com/akankofik-dev/oi-harness.git@v1.0.6"
+_pkg "oi-harness"     "$_C_AMBER" --no-deps "oi-harness @ git+https://github.com/akankofik-dev/oi-harness.git@v1.0.7"
 _pkg "oi-harness deps" "$_C_GREEN" \
     "deepagents>=0.7,<0.8" "httpx>=0.27" "langchain-anthropic>=1.5.4,<2.0" \
     "langchain-core>=1.5.0,<2.0" "langchain-mcp-adapters>=0.3.0" \
