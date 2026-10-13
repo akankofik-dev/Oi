@@ -288,7 +288,7 @@ _pkg "oi-gateway"     "$_C_TEAL"  "oi-gateway @ git+https://github.com/akankofik
 _pkg "oi-browser"     "$_C_BLUE"  "oi-browser @ git+https://github.com/akankofik-dev/oi-browser.git@v1.0.2"
 # oi-harness: depend ke oi-memory & oi-browser (ga ada di PyPI)
 # Install --no-deps, lalu install deps PyPI-nya manual
-_pkg "oi-harness"     "$_C_AMBER" --no-deps "oi-harness @ git+https://github.com/akankofik-dev/oi-harness.git@v1.0.2"
+_pkg "oi-harness"     "$_C_AMBER" --no-deps "oi-harness @ git+https://github.com/akankofik-dev/oi-harness.git@v1.0.3"
 _pkg "oi-harness deps" "$_C_GREEN" \
     "deepagents>=0.7,<0.8" "httpx>=0.27" "langchain-anthropic>=1.5.4,<2.0" \
     "langchain-core>=1.5.0,<2.0" "langchain-mcp-adapters>=0.3.0" \
