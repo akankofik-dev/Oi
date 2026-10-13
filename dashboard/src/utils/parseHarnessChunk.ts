@@ -120,6 +120,29 @@ export interface AttachmentChunk {
   agent_id?: string;
 }
 
+/**
+ * Model-routing notification the backend appends after a stream turn.
+ * ``event === "selected"`` carries the model ref that ACTUALLY answered
+ * the turn (failover-aware) — the UI model badge stamps this per-turn
+ * value instead of the agent's globally configured model.
+ */
+export interface ModelRoutingChunk {
+  type: "model_routing";
+  /** Routing event kind: "selected" | "switched" | "slow" | "retrying". */
+  event: string;
+  /** The model ref that actually answered (event === "selected"). */
+  model?: string;
+  from_model?: string;
+  to_model?: string;
+  reason?: string;
+  detail?: string;
+  latency_s?: number;
+  cycle?: number;
+  next_retry_in_s?: number;
+  /** Team-room speaker when this frame was fanned in from another agent. */
+  agent_id?: string;
+}
+
 export type HarnessChunk =
   | TokenChunk
   | ReasoningChunk
@@ -133,7 +156,8 @@ export type HarnessChunk =
   | ErrorChunk
   | HitlRequiredChunk
   | SlashActionChunk
-  | AttachmentChunk;
+  | AttachmentChunk
+  | ModelRoutingChunk;
 
 /**
  * Parse one ``data: …`` SSE frame line into a typed chunk.
@@ -286,6 +310,24 @@ export function parseHarnessChunk(line: string): HarnessChunk | null {
           typeof obj.mime_type === "string" ? obj.mime_type : undefined,
         kind: typeof obj.kind === "string" ? obj.kind : undefined,
         filename: typeof obj.filename === "string" ? obj.filename : undefined,
+        agent_id: agentId,
+      };
+    case "model_routing":
+      return {
+        type: "model_routing",
+        event: typeof obj.event === "string" ? obj.event : "",
+        model: typeof obj.model === "string" ? obj.model : undefined,
+        from_model:
+          typeof obj.from_model === "string" ? obj.from_model : undefined,
+        to_model: typeof obj.to_model === "string" ? obj.to_model : undefined,
+        reason: typeof obj.reason === "string" ? obj.reason : undefined,
+        detail: typeof obj.detail === "string" ? obj.detail : undefined,
+        latency_s: typeof obj.latency_s === "number" ? obj.latency_s : undefined,
+        cycle: typeof obj.cycle === "number" ? obj.cycle : undefined,
+        next_retry_in_s:
+          typeof obj.next_retry_in_s === "number"
+            ? obj.next_retry_in_s
+            : undefined,
         agent_id: agentId,
       };
     default:
