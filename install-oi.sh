@@ -18,6 +18,9 @@ set -euo pipefail
 
 OI_VERSION="1.0.6"
 OI_WHEEL_URL="https://github.com/akankofik-dev/Oi/releases/download/v${OI_VERSION}/oi-${OI_VERSION}-py3-none-any.whl"
+# SHA-256 wheel yang diharapkan (kosong = verifikasi dilewati).
+# Isi dengan hash resmi release bila tersedia, mis. OI_WHEEL_SHA256="abc123...".
+OI_WHEEL_SHA256="${OI_WHEEL_SHA256:-}"
 VENV_DIR="$HOME/oi-venv"
 OI_PORT="8088"
 OI_LOG="$HOME/oi-install.log"
@@ -256,6 +259,63 @@ _banner() {
 # <<< DISPLAY ENGINE END <<<
 
 # ===========================================================================
+# FIX: false-positive health check — helper kill/start/health yang benar.
+# Server yang dijalankan manual TANPA PID file tidak terbunuh oleh kill via
+# PID file -> bind gagal ("address already in use") tapi health check tetap
+# sukses karena server LAMA yang menjawab -> installer lapor "Oi berjalan"
+# padahal versi baru tidak pernah start. Helper di bawah menutup lubang itu:
+# pastikan port bebas SEBELUM start, dan health check hanya sukses bila PID
+# yang baru di-start yang menjawab.
+# ===========================================================================
+
+_oi_port_busy() {  # _oi_port_busy <port> -> return 0 kalau port sedang di-listen
+    local port="$1"
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltn 2>/dev/null | awk -v p="$port" '
+            NR > 1 { n = split($4, a, ":"); if (a[n] == p) { found = 1; exit } }
+            END { exit !found }'
+    else
+        # fallback kalau ss tidak ada: coba konek TCP (bash /dev/tcp)
+        (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null
+    fi
+}
+
+_oi_ensure_port_free() {  # _oi_ensure_port_free <port> -> 0 kalau port bebas (dibunuh bila perlu)
+    local port="$1" tries=0
+    if ! _oi_port_busy "$port"; then
+        return 0
+    fi
+    printf '  %bPort %s masih dipakai — menghentikan pemegang port%s%b\n' \
+        "$_C_AMBER" "$port" "$_G_ELL" "$_C_RESET" >&2
+    # fuser -k hanya membunuh pemegang port tsb (presisi, tanpa collateral);
+    # pkill -f "oi run" hanya fallback kalau fuser tidak tersedia.
+    if command -v fuser >/dev/null 2>&1; then
+        fuser -k "${port}/tcp" >/dev/null 2>&1 || true
+    else
+        pkill -f "oi run" 2>/dev/null || true
+    fi
+    # Tunggu hingga port benar-benar bebas, maks ~10 detik.
+    while _oi_port_busy "$port" && [ "$tries" -lt 20 ]; do
+        sleep 0.5
+        tries=$((tries + 1))
+    done
+    ! _oi_port_busy "$port"
+}
+
+_oi_health_ok() {  # _oi_health_ok <port> <pid> -> 0 hanya bila PID tsb hidup DAN endpoint sehat
+    local port="$1" pid="$2" body code
+    kill -0 "$pid" 2>/dev/null || return 1
+    body="$(curl -s --max-time 3 "http://127.0.0.1:${port}/api/health" 2>/dev/null || true)"
+    if printf '%s' "$body" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+        return 0
+    fi
+    # Fallback untuk build tanpa /api/health: root dashboard menjawab 200/302.
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 \
+        "http://127.0.0.1:${port}/" 2>/dev/null || true)"
+    [ "$code" = "200" ] || [ "$code" = "302" ]
+}
+
+# ===========================================================================
 # Install — logic sama persis seperti sebelumnya, hanya tampilan yang berubah.
 # Output verbose (apt/pip) disembunyikan ke $OI_LOG, hanya status bersih tampil.
 # ===========================================================================
@@ -288,16 +348,34 @@ _pkg "oi-gateway"     "$_C_TEAL"  "oi-gateway @ git+https://github.com/akankofik
 _pkg "oi-browser"     "$_C_BLUE"  "oi-browser @ git+https://github.com/akankofik-dev/oi-browser.git@v1.0.2"
 # oi-harness: depend ke oi-memory & oi-browser (ga ada di PyPI)
 # Install --no-deps, lalu install deps PyPI-nya manual
-_pkg "oi-harness"     "$_C_AMBER" --no-deps "oi-harness @ git+https://github.com/akankofik-dev/oi-harness.git@v1.0.3"
+_pkg "oi-harness"     "$_C_AMBER" --no-deps "oi-harness @ git+https://github.com/akankofik-dev/oi-harness.git@v1.0.4"
 _pkg "oi-harness deps" "$_C_GREEN" \
     "deepagents>=0.7,<0.8" "httpx>=0.27" "langchain-anthropic>=1.5.4,<2.0" \
     "langchain-core>=1.5.0,<2.0" "langchain-mcp-adapters>=0.3.0" \
     "langchain-openai>=1.2.2,<2.0" "langchain>=1.3.14,<2.0" \
     "langgraph-checkpoint-sqlite>=2.0" "langgraph>=1.0,<2.0" \
-    "markdownify>=0.13" "mcp>=1.27.1,<3" "pyyaml>=6.0" \
+    "markdownify>=0.13" "mcp>=1.27.1,<2" "pyyaml>=6.0" \
+    "pydantic>=2.6,<2.14" "tenacity>=8.2.3,<9.2.0" "websockets>=13.0,<16" \
     "agent-client-protocol>=0.9.0" "cos-python-sdk-v5>=1.9" "psutil>=5.9" "wcmatch>=8.0"
 # Note: [all] extra sebagian sudah di atas; deepagents-backends opsional, skip kalau gagal
-_pkg "oi $OI_VERSION" "$_C_GREEN" --force-reinstall "$OI_WHEEL_URL"
+# oi: unduh wheel dulu agar SHA-256 bisa diverifikasi sebelum install.
+# Urutan, pin versi, dan URL tidak berubah — hanya cara install-nya.
+_step_begin "    " "oi $OI_VERSION" "$_C_GREEN"
+OI_WHEEL_FILE="${TMPDIR:-/tmp}/oi-${OI_VERSION}-py3-none-any.whl"
+_STEP_HINT="Gagal mengunduh wheel Oi dari GitHub release."
+_quiet curl -sSL -o "$OI_WHEEL_FILE" "$OI_WHEEL_URL"
+_STEP_HINT=""
+if [ -n "$OI_WHEEL_SHA256" ]; then
+    _STEP_HINT="SHA-256 wheel tidak cocok — file unduhan mungkin korup atau diganti. Install DIBATALKAN."
+    _quiet bash -c 'printf "%s  %s\n" "$0" "$1" | sha256sum -c - >/dev/null' "$OI_WHEEL_SHA256" "$OI_WHEEL_FILE"
+    _STEP_HINT=""
+else
+    printf '    %b%s%b\n' "$_C_DIM" "SHA-256 wheel tidak dikonfigurasi, verifikasi dilewati." "$_C_RESET" >&2
+fi
+_STEP_HINT=""
+_quiet pip install --force-reinstall "$OI_WHEEL_FILE"
+rm -f "$OI_WHEEL_FILE"
+_step_end "$_C_GREEN"
 
 # [4/5] Init (skip kalau sudah ada)
 _step_begin "  " "Initializing Oi"
@@ -331,11 +409,42 @@ if [ -f "$OI_PID_FILE" ]; then
 fi
 
 _step_begin "  " "Starting server"
-nohup oi run --host 127.0.0.1 --port "$OI_PORT" > "$HOME/oi-server.log" 2>&1 &
-echo $! > "$OI_PID_FILE"
-sleep 5
 
-if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$OI_PORT/" | grep -q "200\|302"; then
+# Port HARUS bebas dulu: server manual tanpa PID file tidak terjangkau kill
+# via PID file di atas — kalau port masih dipakai, start baru gagal bind
+# ("address already in use") dan health check lama akan sukses PALSU.
+if ! _oi_ensure_port_free "$OI_PORT"; then
+    _step_fail
+    printf '%bGAGAL:%b Port %s masih dipakai setelah 10 detik — server lama tidak bisa dihentikan.\n' \
+        "$_C_RED" "$_C_RESET" "$OI_PORT" >&2
+    printf 'Versi baru TIDAK di-start. Bunuh manual pemegang port lalu jalankan ulang installer:\n' >&2
+    printf '  ss -ltnp | grep ":%s "\n' "$OI_PORT" >&2
+    printf '  fuser -k %s/tcp   # atau: pkill -f "oi run"\n' "$OI_PORT" >&2
+    exit 1
+fi
+
+nohup oi run --host 127.0.0.1 --port "$OI_PORT" > "$HOME/oi-server.log" 2>&1 &
+OI_SERVER_PID=$!
+echo "$OI_SERVER_PID" > "$OI_PID_FILE"
+
+# Health check: retry tiap 2 detik, maks ~30 detik, ke /api/health.
+# Sukses HANYA jika PID yang baru di-start masih hidup saat endpoint menjawab
+# ok:true — ini menutup false-positive "server lama yang menjawab".
+_healthy=0
+_tries=0
+while [ "$_tries" -lt 15 ]; do
+    if _oi_health_ok "$OI_PORT" "$OI_SERVER_PID"; then
+        _healthy=1
+        break
+    fi
+    if ! kill -0 "$OI_SERVER_PID" 2>/dev/null; then
+        break  # proses baru sudah mati (mis. gagal bind) — jangan tunggu sia-sia
+    fi
+    sleep 2
+    _tries=$((_tries + 1))
+done
+
+if [ "$_healthy" = 1 ]; then
     _step_end
     printf '\n' >&2
     printf '  %b%s%b Oi berjalan di %bhttp://127.0.0.1:%s%b\n' "$_C_GREEN" "$_G_OK" "$_C_RESET" "$_C_BOLD" "$OI_PORT" "$_C_RESET" >&2
@@ -345,5 +454,10 @@ if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$OI_PORT/" | grep -q
     printf '  %bLog install: %s%b\n' "$_C_DIM" "$OI_LOG" "$_C_RESET" >&2
 else
     _step_fail
-    printf '%bWARNING:%b Server mungkin belum jalan. Cek log: tail -50 %s/oi-server.log\n' "$_C_AMBER" "$_C_RESET" "$HOME" >&2
+    printf '%bGAGAL:%b Server Oi tidak sehat setelah 30 detik (PID %s).\n' \
+        "$_C_RED" "$_C_RESET" "$OI_SERVER_PID" >&2
+    printf 'Versi baru TIDAK berjalan — JANGAN anggap install berhasil.\n' >&2
+    printf 'Cek log server (tail):\n' >&2
+    tail -n 20 "$HOME/oi-server.log" >&2 || true
+    exit 1
 fi
