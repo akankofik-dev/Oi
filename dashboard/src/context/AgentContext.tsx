@@ -390,6 +390,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
                 a.icon_url === b.icon_url &&
                 a.color === b.color &&
                 a.kind === b.kind &&
+                a.resolved_model === b.resolved_model &&
+                a.default_model === b.default_model &&
                 a.bridge === b.bridge &&
                 a.is_owner === b.is_owner &&
                 a.bridge_connection_id === b.bridge_connection_id &&
