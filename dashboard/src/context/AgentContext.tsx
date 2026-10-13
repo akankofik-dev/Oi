@@ -41,6 +41,8 @@ export interface OiAgent {
   description: string | null;
   persona_mbti: string | null;
   default_model: string | null;
+  /** Actual model ref the agent will use (resolves 'auto' mode). */
+  resolved_model?: string | null;
   system_prompt: string | null;
   template_name: string | null;
   state: "running" | "stopped" | "failed" | "starting" | "stopping" | string;
