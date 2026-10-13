@@ -95,6 +95,13 @@ export interface ChatMessage {
    * persisted for the process panel.
    */
   editedFiles?: string[];
+  /**
+   * The model ref that ACTUALLY answered this turn, stamped from the
+   * backend's ``model_routing``/``selected`` stream chunk (failover-aware).
+   * The UI model badge prefers this over the agent's globally configured
+   * ``resolved_model``; absent on historical messages.
+   */
+  actualModel?: string | null;
 }
 
 /** Per-session state held in the chat store's module-scoped Map. */
