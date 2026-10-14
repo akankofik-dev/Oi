@@ -10,9 +10,12 @@
 # Yang dilakukan:
 #   1. Install system dependencies (python3.12 + venv + curl + git, Ubuntu/Debian)
 #   2. Bikin virtual environment ~/oi-venv
-#   3. Install packages (oi-memory, oi-gateway, oi-browser, oi-harness + deps, oi)
+#   3. Install packages (oi-memory, oi-gateway, oi-browser, oi-harness + deps,
+#      oi dari branch optimasi-chat via git — termasuk modul optimasi chat
+#      dan dashboard fix; override dengan OI_SOURCE=wheel untuk release stabil)
 #   4. Init Oi (skip kalau ~/.oi sudah ada)
-#   5. Jalanin oi run di 127.0.0.1:8088
+#   5. Aktifkan flag optimasi chat (permanen, di ~/.oi/config.json)
+#   6. Jalanin oi run di $OI_HOST:8088 (default 127.0.0.1; OI_HOST=0.0.0.0 untuk akses luar)
 #
 set -euo pipefail
 
@@ -362,24 +365,32 @@ _pkg "oi-harness deps" "$_C_GREEN" \
     "pydantic>=2.6,<2.14" "tenacity>=8.2.3,<9.2.0" "websockets>=13.0,<16" \
     "agent-client-protocol>=0.9.0" "cos-python-sdk-v5>=1.9" "psutil>=5.9" "wcmatch>=8.0"
 # Note: [all] extra sebagian sudah di atas; deepagents-backends opsional, skip kalau gagal
-# oi: unduh wheel dulu agar SHA-256 bisa diverifikasi sebelum install.
-# Urutan, pin versi, dan URL tidak berubah — hanya cara install-nya.
-_step_begin "    " "oi $OI_VERSION" "$_C_GREEN"
-OI_WHEEL_FILE="${TMPDIR:-/tmp}/oi-${OI_VERSION}-py3-none-any.whl"
-_STEP_HINT="Gagal mengunduh wheel Oi dari GitHub release."
-_quiet curl -sSL -o "$OI_WHEEL_FILE" "$OI_WHEEL_URL"
-_STEP_HINT=""
-if [ -n "$OI_WHEEL_SHA256" ]; then
-    _STEP_HINT="SHA-256 wheel tidak cocok — file unduhan mungkin korup atau diganti. Install DIBATALKAN."
-    _quiet bash -c 'printf "%s  %s\n" "$0" "$1" | sha256sum -c - >/dev/null' "$OI_WHEEL_SHA256" "$OI_WHEEL_FILE"
+# oi: install dari source Git (branch optimasi-chat) agar kode optimasi +
+# dashboard fix ikut terpasang. Bisa dioverride:
+#   OI_SOURCE=wheel  -> pakai release wheel 1.0.6 stabil (perilaku lama)
+#   OI_BRANCH=<nama> -> pakai branch lain
+OI_SOURCE="${OI_SOURCE:-git}"
+OI_BRANCH="${OI_BRANCH:-optimasi-chat}"
+if [ "$OI_SOURCE" = "wheel" ]; then
+    _step_begin "    " "oi $OI_VERSION (wheel)" "$_C_GREEN"
+    OI_WHEEL_FILE="${TMPDIR:-/tmp}/oi-${OI_VERSION}-py3-none-any.whl"
+    _STEP_HINT="Gagal mengunduh wheel Oi dari GitHub release."
+    _quiet curl -sSL -o "$OI_WHEEL_FILE" "$OI_WHEEL_URL"
     _STEP_HINT=""
+    if [ -n "$OI_WHEEL_SHA256" ]; then
+        _STEP_HINT="SHA-256 wheel tidak cocok — file unduhan mungkin korup atau diganti. Install DIBATALKAN."
+        _quiet bash -c 'printf "%s  %s\n" "$0" "$1" | sha256sum -c - >/dev/null' "$OI_WHEEL_SHA256" "$OI_WHEEL_FILE"
+        _STEP_HINT=""
+    fi
+    _STEP_HINT=""
+    _quiet pip install --force-reinstall "$OI_WHEEL_FILE"
+    rm -f "$OI_WHEEL_FILE"
+    _step_end "$_C_GREEN"
 else
-    printf '    %b%s%b\n' "$_C_DIM" "SHA-256 wheel tidak dikonfigurasi, verifikasi dilewati." "$_C_RESET" >&2
+    _STEP_HINT="Gagal install oi dari GitHub branch $OI_BRANCH."
+    _pkg "oi ($OI_BRANCH)" "$_C_GREEN" --force-reinstall "oi @ git+https://github.com/akankofik-dev/Oi.git@$OI_BRANCH"
+    _STEP_HINT=""
 fi
-_STEP_HINT=""
-_quiet pip install --force-reinstall "$OI_WHEEL_FILE"
-rm -f "$OI_WHEEL_FILE"
-_step_end "$_C_GREEN"
 
 # [4/5] Init (skip kalau sudah ada)
 _step_begin "  " "Initializing Oi"
@@ -401,6 +412,41 @@ fi
 _step_end
 if [ -n "$_skipped" ]; then
     printf '    %b%s%b\n' "$_C_DIM" "~/.oi sudah ada, init dilewati." "$_C_RESET" >&2
+fi
+
+# [4b/5] Aktifkan flag optimasi chat secara permanen di ~/.oi/config.json.
+# Ditulis via python agar JSON tidak rusak. Idempoten: aman dijalankan ulang.
+_step_begin "  " "Mengaktifkan optimasi chat"
+if [ -f "$HOME/.oi/config.json" ]; then
+    if "$VENV_DIR/bin/python" - << 'PYEOF' >>"$OI_LOG" 2>&1; then
+import json, os
+p = os.path.expanduser("~/.oi/config.json")
+with open(p) as f:
+    cfg = json.load(f)
+cfg["chat"] = {
+    "batch_db_writes": True,
+    "async_history": True,
+    "mmap_history": True,
+    "provider_prewarm": True,
+    "smart_context_switch": True,
+    "semantic_compress": True,
+    "auto_router": True,
+    "auto_router_mode": "suggest",
+}
+with open(p, "w") as f:
+    json.dump(cfg, f, indent=2)
+print("chat flags written")
+PYEOF
+        _step_end
+    else
+        _step_fail
+        printf '%bGAGAL:%b Tidak bisa menulis flag optimasi ke ~/.oi/config.json. Cek %s\n' "$_C_RED" "$_C_RESET" "$OI_LOG" >&2
+        exit 1
+    fi
+else
+    _step_fail
+    printf '%bGAGAL:%b ~/.oi/config.json tidak ditemukan setelah init.\n' "$_C_RED" "$_C_RESET" >&2
+    exit 1
 fi
 
 # [5/5] Server — bereskan server lama dulu (info redup), baru start yang baru.
@@ -487,6 +533,7 @@ if [ "$_healthy" = 1 ]; then
         printf '  %bMau diakses dari luar? Jalankan ulang dengan:%b\n' "$_C_DIM" "$_C_RESET" >&2
         printf '    curl -sSL https://raw.githubusercontent.com/akankofik-dev/Oi/main/install-oi.sh | OI_HOST=0.0.0.0 bash\n\n' >&2
     fi
+    printf '  %bOptimasi chat: AKTIF (7 flag, permanen di ~/.oi/config.json)%b\n' "$_C_GREEN" "$_C_RESET" >&2
     printf '  %bLog install: %s%b\n' "$_C_DIM" "$OI_LOG" "$_C_RESET" >&2
 else
     _step_fail
