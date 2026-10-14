@@ -23,6 +23,10 @@ OI_WHEEL_URL="https://github.com/akankofik-dev/Oi/releases/download/v${OI_VERSIO
 OI_WHEEL_SHA256="${OI_WHEEL_SHA256:-5e24191fbb2364a58726a3549e459d570becc520b8413fe279a0b7d3f433ee92}"
 VENV_DIR="$HOME/oi-venv"
 OI_PORT="8088"
+# Bind address server. Default 127.0.0.1 (hanya localhost).
+# Isi 0.0.0.0 supaya bisa diakses dari luar, mis:
+#   curl -sSL https://raw.githubusercontent.com/akankofik-dev/Oi/main/install-oi.sh | OI_HOST=0.0.0.0 bash
+OI_HOST="${OI_HOST:-127.0.0.1}"
 OI_LOG="$HOME/oi-install.log"
 
 # >>> DISPLAY ENGINE START >>>
@@ -422,6 +426,16 @@ _step_begin "  " "Starting server"
 # Port HARUS bebas dulu: server manual tanpa PID file tidak terjangkau kill
 # via PID file di atas — kalau port masih dipakai, start baru gagal bind
 # ("address already in use") dan health check lama akan sukses PALSU.
+# Kalau di-bind ke 0.0.0.0, buka port di firewall (ufw) supaya bisa diakses dari luar.
+# Best-effort: gagal buka firewall tidak menggagalkan install.
+if [ "$OI_HOST" = "0.0.0.0" ] && command -v ufw >/dev/null 2>&1; then
+    if ufw status 2>/dev/null | grep -q "Status: active"; then
+        printf '  %bMembuka port %s di firewall (ufw)%s%b\n' "$_C_DIM" "$OI_PORT" "$_G_ELL" "$_C_RESET" >&2
+        ufw allow "$OI_PORT"/tcp >>"$OI_LOG" 2>&1 || \
+            printf '  %bGagal buka firewall otomatis — buka manual: ufw allow %s/tcp%b\n' "$_C_AMBER" "$OI_PORT" "$_C_RESET" >&2
+    fi
+fi
+
 if ! _oi_ensure_port_free "$OI_PORT"; then
     _step_fail
     printf '%bGAGAL:%b Port %s masih dipakai setelah 10 detik — server lama tidak bisa dihentikan.\n' \
@@ -432,7 +446,7 @@ if ! _oi_ensure_port_free "$OI_PORT"; then
     exit 1
 fi
 
-nohup oi run --host 127.0.0.1 --port "$OI_PORT" > "$HOME/oi-server.log" 2>&1 &
+nohup oi run --host "$OI_HOST" --port "$OI_PORT" > "$HOME/oi-server.log" 2>&1 &
 OI_SERVER_PID=$!
 echo "$OI_SERVER_PID" > "$OI_PID_FILE"
 
@@ -456,10 +470,23 @@ done
 if [ "$_healthy" = 1 ]; then
     _step_end
     printf '\n' >&2
-    printf '  %b%s%b Oi berjalan di %bhttp://127.0.0.1:%s%b\n' "$_C_GREEN" "$_G_OK" "$_C_RESET" "$_C_BOLD" "$OI_PORT" "$_C_RESET" >&2
-    printf '\n' >&2
-    printf '  %bAkses luar localhost:%b\n' "$_C_DIM" "$_C_RESET" >&2
-    printf '    cloudflared tunnel --url http://127.0.0.1:%s\n\n' "$OI_PORT" >&2
+    if [ "$OI_HOST" = "0.0.0.0" ]; then
+        _PUBIP="$(curl -s --max-time 5 ifconfig.me 2>/dev/null || true)"
+        if [ -n "$_PUBIP" ]; then
+            printf '  %b%s%b Oi berjalan dan bisa diakses dari luar:\n' "$_C_GREEN" "$_G_OK" "$_C_RESET" >&2
+            printf '    %bhttp://%s:%s%b\n\n' "$_C_BOLD" "$_PUBIP" "$OI_PORT" "$_C_RESET" >&2
+        else
+            printf '  %b%s%b Oi berjalan di semua interface, port %s.\n' "$_C_GREEN" "$_G_OK" "$_C_RESET" "$OI_PORT" >&2
+            printf '    Akses via http://IP-VPS:%s\n\n' "$OI_PORT" >&2
+        fi
+        printf '  %bCatatan:%b halaman login sekarang terbuka ke internet.\n' "$_C_AMBER" "$_C_RESET" >&2
+        printf '  %bPassword admin tersimpan di ~/.oi-admin-password.txt — jangan dibagikan.%b\n\n' "$_C_DIM" "$_C_RESET" >&2
+    else
+        printf '  %b%s%b Oi berjalan di %bhttp://127.0.0.1:%s%b\n' "$_C_GREEN" "$_G_OK" "$_C_RESET" "$_C_BOLD" "$OI_PORT" "$_C_RESET" >&2
+        printf '\n' >&2
+        printf '  %bMau diakses dari luar? Jalankan ulang dengan:%b\n' "$_C_DIM" "$_C_RESET" >&2
+        printf '    curl -sSL https://raw.githubusercontent.com/akankofik-dev/Oi/main/install-oi.sh | OI_HOST=0.0.0.0 bash\n\n' >&2
+    fi
     printf '  %bLog install: %s%b\n' "$_C_DIM" "$OI_LOG" "$_C_RESET" >&2
 else
     _step_fail
