@@ -1,0 +1,37 @@
+/**
+ * Layout contract for the global antd Spin indicator (OctopSpinner).
+ * antd sizes and positions its default dot from the `dotSize` token, so every
+ * geometry rule it derives (box, nested-pattern centering, tip gap) has to be
+ * restated from the size variable.
+ */
+
+/* One ring size for page- and section-level loading (`size` default / large). */
+.oi-spin {
+  --oi-spinner-size: 48px;
+  --oi-spinner-ring-width: 4px;
+}
+
+/* `size="small"` marks spins nested in a control — input suffixes, select
+   dropdowns, inline labels — where a 48px ring would stretch its container. */
+.oi-spin-sm {
+  --oi-spinner-size: 18px;
+  --oi-spinner-ring-width: 2px;
+}
+
+.oi-spin .oi-spin-dot {
+  width: var(--oi-spinner-size) !important;
+  height: var(--oi-spinner-size) !important;
+}
+
+.oi-spin-nested-loading .oi-spin .oi-spin-dot {
+  margin: calc(var(--oi-spinner-size) / -2) !important;
+}
+
+/* With a tip, lift the ring and drop the text below it. */
+.oi-spin-nested-loading .oi-spin-show-text .oi-spin-dot {
+  margin-top: calc(var(--oi-spinner-size) / -2 - 12px) !important;
+}
+
+.oi-spin-nested-loading .oi-spin-show-text .oi-spin-text {
+  padding-top: calc(var(--oi-spinner-size) / 2 - 4px) !important;
+}
