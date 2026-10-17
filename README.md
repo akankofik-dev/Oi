@@ -1,10 +1,16 @@
 # Oi
 
-> Oi based on Octop — Oi adalah rebrand dari [TencentCloud/Octop](https://github.com/TencentCloud/Octop), dengan struktur yang diselaraskan dengan upstream.
-
 Asisten AI self-hosted yang lebih pintar — multi-user, multi-agent. Dashboard full Bahasa Indonesia.
 
 ## Install
+
+### Prerequisites
+
+- Linux (Ubuntu/Debian)
+- `git` dan `bash`
+- Akses sudo untuk install dependensi sistem (Python, venv, `curl`, `git`) — skrip akan menginstall yang belum ada.
+
+### 1. Install
 
 ```bash
 git clone https://github.com/akankofik-dev/Oi.git
@@ -12,14 +18,25 @@ cd Oi
 bash install-oi.sh
 ```
 
-Itu aja. Script-nya otomatis: install Python 3.12+ → bikin venv → install semua dependency → jalanin server di `http://127.0.0.1:8088`.
-
-Kenapa `git clone` (bukan `curl | bash`)? Biar jalan di semua mesin — nggak butuh `curl`, dan selalu narik kode terbaru (nggak kena cache CDN).
+Skrip ini otomatis: install dependensi sistem → bikin venv di `~/oi-venv` → install semua dependency → inisialisasi → jalanin server.
 
 Untuk akses dari luar (VPS), ganti baris terakhir jadi:
 
 ```bash
 OI_HOST=0.0.0.0 bash install-oi.sh
+```
+
+### 2. Initialize
+
+Inisialisasi dijalankan otomatis oleh `install-oi.sh` (dilewati kalau `~/.oi` sudah ada). Tidak ada langkah manual.
+
+### 3. Run
+
+Server dijalankan otomatis oleh `install-oi.sh` di `http://127.0.0.1:8088` (atau `http://0.0.0.0:8088` kalau `OI_HOST=0.0.0.0`). Untuk menjalankan lagi secara manual:
+
+```bash
+source ~/oi-venv/bin/activate
+oi run --host 127.0.0.1 --port 8088  # jalanin server
 ```
 
 ## Akses dari Luar
@@ -47,7 +64,7 @@ Ganti `1.0.6` dengan versi terbaru dari [Releases](https://github.com/akankofik-
 
 ```bash
 source ~/oi-venv/bin/activate
-oi run --host 127.0.0.1 --port 8088   # jalanin server
+oi run --host 127.0.0.1 --port 8088  # jalanin server
 ```
 
 ## Butuh bantuan?
