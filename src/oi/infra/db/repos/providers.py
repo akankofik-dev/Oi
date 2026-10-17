@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from oi.infra.db.pool import DatabasePool
@@ -14,6 +14,11 @@ from oi.infra.db.repos._base import (
     map_rows,
     now_ts,
     partial_updates,
+)
+from oi.infra.security.secrets_crypto import (
+    SecretCrypto,
+    get_secret_crypto,
+    migrate_table_api_keys,
 )
 
 if TYPE_CHECKING:
@@ -63,8 +68,29 @@ class ProviderRow:
 
 
 class ProviderRepo:
-    def __init__(self, db: DatabasePool) -> None:
+    """Provider rows with transparent API-key encryption at rest.
+
+    ``api_key`` is stored ciphertext (``enc:v1:``) and always returned
+    plaintext to callers. If no encryption key can be resolved, the first
+    key operation raises :class:`SecretKeyError` — never silent plaintext.
+    """
+
+    def __init__(self, db: DatabasePool, crypto: SecretCrypto | None = None) -> None:
         self._db = db
+        self._crypto = crypto
+
+    @property
+    def _keys(self) -> SecretCrypto:
+        if self._crypto is None:
+            self._crypto = get_secret_crypto()
+        return self._crypto
+
+    def _decrypt_row(self, row: ProviderRow) -> ProviderRow:
+        return replace(row, api_key=self._keys.decrypt_value(row.api_key))
+
+    def migrate_api_keys_to_encrypted(self) -> int:
+        """One-time, idempotent migration of plaintext keys to ciphertext."""
+        return migrate_table_api_keys(self._db, "providers", crypto=self._keys)
 
     def create(
         self,
@@ -84,23 +110,33 @@ class ProviderRepo:
                 "INSERT INTO providers(name, kind, base_url, api_key, "
                 "extra_json, models_json, note, enabled, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
-                (name, kind, base_url, api_key, extra_json, models_json, note, ts, ts),
+                (
+                    name,
+                    kind,
+                    base_url,
+                    self._keys.encrypt_value(api_key),
+                    extra_json,
+                    models_json,
+                    note,
+                    ts,
+                    ts,
+                ),
             )
 
     def get(self, provider_id: int) -> ProviderRow | None:
         with self._db.connect() as conn:
             r = conn.execute("SELECT * FROM providers WHERE id = ?", (provider_id,)).fetchone()
-        return ProviderRow.from_row(r) if r else None
+        return self._decrypt_row(ProviderRow.from_row(r)) if r else None
 
     def get_by_name(self, name: str) -> ProviderRow | None:
         with self._db.connect() as conn:
             r = conn.execute("SELECT * FROM providers WHERE name = ?", (name,)).fetchone()
-        return ProviderRow.from_row(r) if r else None
+        return self._decrypt_row(ProviderRow.from_row(r)) if r else None
 
     def list_all(self) -> list[ProviderRow]:
         with self._db.connect() as conn:
             rows = conn.execute("SELECT * FROM providers ORDER BY name").fetchall()
-        return map_rows(rows, ProviderRow)
+        return [self._decrypt_row(row) for row in map_rows(rows, ProviderRow)]
 
     def update(
         self,
@@ -118,7 +154,10 @@ class ProviderRepo:
             [
                 ("kind", kind),
                 ("base_url", base_url),
-                ("api_key", api_key),
+                (
+                    "api_key",
+                    self._keys.encrypt_value(api_key) if api_key is not None else None,
+                ),
                 ("extra_json", extra_json),
                 ("models_json", models_json),
                 ("note", note),

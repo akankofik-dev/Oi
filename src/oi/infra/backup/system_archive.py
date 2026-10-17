@@ -44,6 +44,12 @@ from oi.infra.db.pool import DatabasePool, SqlitePool
 from oi.infra.db.repos.agents import AgentRepo
 from oi.infra.db.repos.secrets import SecretRepo
 from oi.infra.errors import ErrorCode, OiError
+from oi.infra.security.secrets_crypto import (
+    SecretCrypto,
+    SecretKeyError,
+    get_secret_crypto,
+    migrate_all_provider_keys,
+)
 from oi.infra.utils.env_file import env_file_path
 from oi.infra.utils.paths import PathLayout
 
@@ -152,6 +158,7 @@ def _build_manifest(
     include_plugins: bool,
     include_knowledge: bool,
     include_chats: bool,
+    secrets_encrypted: bool = False,
 ) -> BackupManifest:
     try:
         schema_version = _current_version(pool)
@@ -181,6 +188,7 @@ def _build_manifest(
         includes_plugins=include_plugins,
         includes_knowledge=include_knowledge,
         includes_chats=include_chats,
+        secrets_encrypted=secrets_encrypted,
     )
 
 
@@ -222,6 +230,19 @@ def create_system_backup(
         if not pool.path.is_file():
             raise OiError(ErrorCode.NOT_FOUND, f"database not found: {pool.path}")
 
+    # Secrets at rest: fail loudly without a key, and migrate any plaintext
+    # provider keys to ciphertext *before* the database snapshot, so the
+    # archive never ships plaintext keys.
+    try:
+        crypto = get_secret_crypto()
+        migrate_all_provider_keys(pool, crypto=crypto)
+    except SecretKeyError as exc:
+        raise OiError(
+            ErrorCode.INTERNAL_ERROR,
+            "Cannot create backup: no usable secret key. Set OI_SECRET_KEY "
+            "or ensure the key file is readable; refusing to ship plaintext secrets.",
+        ) from exc
+
     env_path = env_file_path(paths.root)
     manifest = _build_manifest(
         paths=paths,
@@ -237,6 +258,7 @@ def create_system_backup(
         include_plugins=include_plugins,
         include_knowledge=include_knowledge,
         include_chats=include_chats,
+        secrets_encrypted=True,
     )
     filename = suggested_backup_filename()
     dest = Path(dest)
@@ -271,14 +293,17 @@ def create_system_backup(
             manifest_path = root / _MANIFEST_NAME
             manifest_path.write_text(manifest.to_json(), encoding="utf-8")
 
+            # Stage config.json / env ENCRYPTED (never plaintext in the archive).
             if include_config and paths.config.is_file():
                 cfg_dir = root / _CONFIG_DIR
                 cfg_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(paths.config, cfg_dir / "config.json")
+                (cfg_dir / "config.json.enc").write_bytes(
+                    crypto.encrypt_bytes(paths.config.read_bytes())
+                )
             if include_config and env_path.is_file():
                 cfg_dir = root / _CONFIG_DIR
                 cfg_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(env_path, cfg_dir / "env")
+                (cfg_dir / "env.enc").write_bytes(crypto.encrypt_bytes(env_path.read_bytes()))
 
             with tarfile.open(partial, mode="w:gz") as tf:
                 tf.add(manifest_path, arcname=_MANIFEST_NAME)
@@ -289,11 +314,11 @@ def create_system_backup(
                         tf.add(marker, arcname="history/history_v2.required")
                 if include_config and paths.config.is_file():
                     tf.add(
-                        root / _CONFIG_DIR / "config.json",
-                        arcname=f"{_CONFIG_DIR}/config.json",
+                        root / _CONFIG_DIR / "config.json.enc",
+                        arcname=f"{_CONFIG_DIR}/config.json.enc",
                     )
                 if include_config and env_path.is_file():
-                    tf.add(root / _CONFIG_DIR / "env", arcname=f"{_CONFIG_DIR}/env")
+                    tf.add(root / _CONFIG_DIR / "env.enc", arcname=f"{_CONFIG_DIR}/env.enc")
                 if include_workspaces:
                     for row in agent_rows:
                         agent_id = str(row.agent_id)
@@ -450,6 +475,22 @@ def restore_system_backup(
         extracted = Path(tmp) / "extracted"
         _extract_archive(source, extracted)
         manifest = _extract_manifest_from_dir(extracted)
+        # Encrypted backups need the SAME key to restore. Fail fast before
+        # touching the live database: a half-restored DB + unrestorable
+        # config is worse than refusing outright. If the key is lost,
+        # encrypted secrets cannot be recovered.
+        restore_crypto: SecretCrypto | None = None
+        if manifest.secrets_encrypted:
+            try:
+                restore_crypto = get_secret_crypto()
+            except SecretKeyError as exc:
+                raise OiError(
+                    ErrorCode.SLASH_BAD_ARGS,
+                    "Backup contains encrypted secrets but no usable key is "
+                    "available. Set OI_SECRET_KEY (or OI_SECRET_KEY_FILE) to "
+                    "the key used when the backup was created.",
+                    status=400,
+                ) from exc
         # NOTE: history_v2 files in the archive are intentionally NOT restored
         # here (restore never copied them; the target's own history is left
         # untouched). Previously this raised SLASH_BAD_ARGS whenever EITHER
@@ -543,15 +584,73 @@ def restore_system_backup(
             ) from exc
 
         if restore_config:
-            cfg_path = extracted / _CONFIG_DIR / "config.json"
-            if cfg_path.is_file():
+            cfg_enc_path = extracted / _CONFIG_DIR / "config.json.enc"
+            if cfg_enc_path.is_file():
+                if restore_crypto is None:
+                    try:
+                        restore_crypto = get_secret_crypto()
+                    except SecretKeyError as exc:
+                        raise OiError(
+                            ErrorCode.SLASH_BAD_ARGS,
+                            "Backup config is encrypted but no usable key is "
+                            "available. Set OI_SECRET_KEY to the key used when "
+                            "the backup was created.",
+                            status=400,
+                        ) from exc
+                try:
+                    cfg_plain = restore_crypto.decrypt_bytes(cfg_enc_path.read_bytes())
+                except SecretKeyError as exc:
+                    raise OiError(
+                        ErrorCode.SLASH_BAD_ARGS,
+                        "Cannot decrypt backup config: wrong key. Restore "
+                        "with the OI_SECRET_KEY used when the backup was created.",
+                        status=400,
+                    ) from exc
                 paths.config.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(cfg_path, paths.config)
-            env_blob_path = extracted / _CONFIG_DIR / "env"
-            if env_blob_path.is_file():
+                paths.config.write_bytes(cfg_plain)
+            else:
+                cfg_path = extracted / _CONFIG_DIR / "config.json"
+                if cfg_path.is_file():
+                    logger.warning(
+                        "Restoring plaintext config.json from a legacy "
+                        "(unencrypted) backup."
+                    )
+                    paths.config.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(cfg_path, paths.config)
+            env_enc_path = extracted / _CONFIG_DIR / "env.enc"
+            if env_enc_path.is_file():
+                if restore_crypto is None:
+                    try:
+                        restore_crypto = get_secret_crypto()
+                    except SecretKeyError as exc:
+                        raise OiError(
+                            ErrorCode.SLASH_BAD_ARGS,
+                            "Backup env is encrypted but no usable key is "
+                            "available. Set OI_SECRET_KEY to the key used when "
+                            "the backup was created.",
+                            status=400,
+                        ) from exc
+                try:
+                    env_plain = restore_crypto.decrypt_bytes(env_enc_path.read_bytes())
+                except SecretKeyError as exc:
+                    raise OiError(
+                        ErrorCode.SLASH_BAD_ARGS,
+                        "Cannot decrypt backup env: wrong key. Restore with "
+                        "the OI_SECRET_KEY used when the backup was created.",
+                        status=400,
+                    ) from exc
                 env_path = env_file_path(paths.root)
                 env_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(env_blob_path, env_path)
+                env_path.write_bytes(env_plain)
+            else:
+                env_blob_path = extracted / _CONFIG_DIR / "env"
+                if env_blob_path.is_file():
+                    logger.warning(
+                        "Restoring plaintext env from a legacy (unencrypted) backup."
+                    )
+                    env_path = env_file_path(paths.root)
+                    env_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(env_blob_path, env_path)
 
         # Migration ownership remap must run after the target owner exists and
         # before pruning backup placeholder users (avoids ON DELETE CASCADE).
