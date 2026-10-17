@@ -223,13 +223,23 @@ async def project_stream(
     # Resilient stream: 429 / context-length failures raised before the
     # first chunk are retried (backoff honouring Retry-After, context
     # recompressed on each retry). Once chunks flow, errors propagate as
-    # before — a partial turn is never restarted.
+    # before — a partial turn is never restarted. On 429 after retries,
+    # the turn automatically fails over to the next configured model
+    # with the SAME request/history.
     from oi.infra.optimizations.chat_resilience import resilient_stream  # noqa: PLC0415
 
+    _fallback_models: list[str] | None = None
+    try:
+        _usable_refs = getattr(agent_manager, "usable_model_refs", None)
+        if callable(_usable_refs):
+            _fallback_models = _usable_refs()
+    except Exception:
+        _fallback_models = None
     stream = resilient_stream(
         lambda: agent_manager.stream(agent_id, request),
         request=request,
         model=request.get("model") if isinstance(request, dict) else None,
+        fallback_models=_fallback_models,
     )
     async for ev in _project_chunks(
         stream,
