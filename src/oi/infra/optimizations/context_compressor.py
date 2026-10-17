@@ -74,7 +74,78 @@ _MODEL_WINDOW_PATTERNS: tuple[tuple[str, int], ...] = (
     ("command-r", 128_000),
     ("phi-4", 128_000),
     ("phi-3", 128_000),
+    # Newer / less common families (model-agnostic: the table must keep
+    # growing with the ecosystem, never assume a fixed model set).
+    ("agnes", 128_000),
+    ("glm-4", 128_000),
+    ("glm", 128_000),
+    ("qwen3", 128_000),
+    ("qwen2", 128_000),
+    ("llama-4", 1_000_000),
+    ("llama", 128_000),
+    ("kimi", 200_000),
+    ("moonshot", 128_000),
+    ("minimax", 1_000_000),
+    ("stepfun", 128_000),
+    ("doubao", 128_000),
+    ("mistral", 128_000),
+    ("mixtral", 32_000),
+    ("codestral", 256_000),
+    ("devstral", 128_000),
+    ("gemma-3", 128_000),
+    ("gemma", 8_192),
+    ("exaone", 32_000),
+    ("solar", 128_000),
 )
+
+#: Explicit per-model window overrides (exact lowercase model name, or the
+#: provider's configured value). Checked before the substring table so an
+#: operator / provider metadata can correct a wrong guess. Populated via
+#: :func:`register_model_window` — e.g. from a model's ``context_window`` /
+#: ``max_input_tokens`` metadata at provider-registration time.
+_MODEL_WINDOW_OVERRIDES: dict[str, int] = {}
+
+
+def register_model_window(model: str, window_tokens: int) -> None:
+    """Register an explicit context window for one model name."""
+    if not model or window_tokens <= 0:
+        return
+    _MODEL_WINDOW_OVERRIDES[str(model).lower().strip()] = int(window_tokens)
+
+
+def resolve_context_window(
+    model: str | None,
+    explicit: int | dict[str, Any] | None = None,
+) -> int:
+    """Context window (tokens) for a model, honouring explicit metadata.
+
+    Precedence: ``explicit`` metadata (``int`` tokens, or a dict carrying
+    ``context_window`` / ``max_input_tokens`` / ``max_context_tokens``) >
+    registered override > substring table > conservative fallback.
+    Unknown models therefore get the fallback instead of failing, and a
+    model whose provider reports a small window adapts (compresses more
+    aggressively) instead of erroring.
+    """
+    if explicit is not None:
+        window: Any = explicit
+        if isinstance(explicit, dict):
+            for key in ("context_window", "max_context_tokens", "max_input_tokens"):
+                window = explicit.get(key)
+                if window:
+                    break
+            else:
+                window = None
+        try:
+            tokens = int(window)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            tokens = 0
+        if tokens > 0:
+            return tokens
+    if model:
+        override = _MODEL_WINDOW_OVERRIDES.get(str(model).lower().strip())
+        if override:
+            return override
+    return context_window_for_model(model)
 
 
 def context_window_for_model(model: str | None) -> int:
@@ -131,6 +202,8 @@ def _message_role(message: Any) -> str:
     msg_type = getattr(message, "type", "")
     mapping = {"human": "user", "ai": "assistant"}
     return mapping.get(str(msg_type).lower(), str(msg_type).lower())
+
+
 
 
 def _replace_content(message: Any, new_content: str) -> Any:
@@ -265,3 +338,118 @@ def compress_request_messages(
         result = dedup_system_prompts(result)
         result = summarize_tool_messages(result)
     return result
+
+
+def fit_messages_to_window(
+    messages: list[Any],
+    *,
+    model: str | None = None,
+    context_window_tokens: int | None = None,
+    reserve_tokens: int = 4_096,
+    keep_last_min: int = 2,
+) -> list[Any]:
+    """Fit ``messages`` under a model's window; never raise, never drop the tail.
+
+    Progressive strategy, each step strictly smaller than the last:
+
+    1. semantic compression (dedup system prompts, truncate tool payloads);
+    2. smart context switch with shrinking ``keep_last``
+       (10 → 6 → 4 → ``keep_last_min``);
+    3. drop oldest non-system messages (system prompt + newest messages
+       always survive) as a last resort.
+
+    ``reserve_tokens`` is kept free for the model's reply. A model with a
+    tiny window therefore gets *more aggressive* compression, not an error.
+    Returns the input unchanged when it already fits.
+    """
+    if not messages:
+        return messages
+    window = context_window_tokens or resolve_context_window(model)
+    if window <= 0:
+        return messages
+    # Reserve must never eat the whole window (tiny-window models still
+    # need room for at least half their window of history).
+    reserve_tokens = min(max(0, reserve_tokens), window // 2)
+    budget = max(1, window - reserve_tokens)
+
+    def _total(msgs: list[Any]) -> int:
+        return sum(estimate_tokens(_message_text(m)) for m in msgs)
+
+    result = dedup_system_prompts(messages)
+    result = summarize_tool_messages(result)
+    if _total(result) <= budget:
+        return result
+    for keep_last in (10, 6, 4, keep_last_min):
+        candidate = smart_context_switch(
+            result, context_window_tokens=window, keep_last=keep_last
+        )
+        # smart_context_switch triggers at 50% of the window; accept the
+        # candidate when it actually shrank the list, then re-check budget.
+        if len(candidate) < len(result):
+            result = candidate
+        result = summarize_tool_messages(result, max_chars=TOOL_PAYLOAD_MAX_CHARS // 2)
+        if _total(result) <= budget:
+            return result
+    # Last resort: drop oldest non-system messages, keeping the newest
+    # ``keep_last_min`` + every system message.
+    system_msgs = [m for m in result if _message_role(m) == "system"]
+    rest = [m for m in result if _message_role(m) != "system"]
+    tail = rest[-keep_last_min:] if rest else []
+    fitted = [*system_msgs, *tail]
+    if _total(fitted) > budget and tail:
+        # Even the tail alone is too big (one giant message): truncate the
+        # oldest tail message's text head+tail so the turn still proceeds.
+        trimmed: list[Any] = []
+        remaining = budget - sum(
+            estimate_tokens(_message_text(m)) for m in [*system_msgs, *tail[1:]]
+        )
+        first = tail[0]
+        text = _message_text(first)
+        if remaining <= 0:
+            trimmed = [*system_msgs, *tail[1:]]
+        else:
+            max_chars = max(64, remaining * 4)
+            if len(text) > max_chars:
+                half = max_chars // 2
+                first = _replace_content(
+                    first,
+                    f"{text[:half]}\n…[truncated to fit context window]…\n{text[-half:]}",
+                )
+            trimmed = [*system_msgs, first, *tail[1:]]
+        return trimmed
+    return fitted
+
+
+def compress_for_retry(
+    messages: list[Any],
+    *,
+    model: str | None = None,
+    context_window_tokens: int | None = None,
+    attempt: int = 0,
+) -> list[Any]:
+    """Recompress ``messages`` after a context-length error (retry ``attempt``).
+
+    Each attempt is strictly more aggressive: attempt 0 fits to the full
+    window, later attempts reserve more headroom and keep fewer recent
+    messages, so a repeated provider rejection still converges instead of
+    looping on the same payload.
+    """
+    keep_last_min = max(1, 2 - attempt)
+    reserve = 4_096 * (attempt + 1)
+    fitted = fit_messages_to_window(
+        messages,
+        model=model,
+        context_window_tokens=context_window_tokens,
+        reserve_tokens=reserve,
+        keep_last_min=keep_last_min,
+    )
+    if len(fitted) < len(messages) or len(messages) <= 2:
+        return fitted
+    # The provider rejected the payload but our estimate says it fits
+    # (estimate/provider counting differs). Guarantee progress: keep only
+    # the system prompt + the newest messages, so the retry never resends
+    # the identical payload that just failed.
+    system_msgs = [m for m in messages if _message_role(m) == "system"]
+    rest = [m for m in messages if _message_role(m) != "system"]
+    keep = max(1, keep_last_min)
+    return [*system_msgs, *rest[-keep:]]

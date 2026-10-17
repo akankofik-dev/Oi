@@ -220,8 +220,19 @@ async def project_stream(
     hitl_ctx: HitlStreamContext | None = None,
 ) -> AsyncIterator[MessageEvent]:
     del media_backend  # IM tool media uses agent.backend directly
+    # Resilient stream: 429 / context-length failures raised before the
+    # first chunk are retried (backoff honouring Retry-After, context
+    # recompressed on each retry). Once chunks flow, errors propagate as
+    # before — a partial turn is never restarted.
+    from oi.infra.optimizations.chat_resilience import resilient_stream  # noqa: PLC0415
+
+    stream = resilient_stream(
+        lambda: agent_manager.stream(agent_id, request),
+        request=request,
+        model=request.get("model") if isinstance(request, dict) else None,
+    )
     async for ev in _project_chunks(
-        agent_manager.stream(agent_id, request),
+        stream,
         agent_manager=agent_manager,
         agent_id=agent_id,
         locale=locale,
