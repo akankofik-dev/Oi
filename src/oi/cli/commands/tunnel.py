@@ -10,11 +10,11 @@ local Oi server. Runs in the foreground — press Ctrl+C to stop.
 
 from __future__ import annotations
 
+import contextlib
 import re
 import shutil
 import socket
 import subprocess
-import sys
 import time
 
 import click
@@ -207,10 +207,8 @@ def tunnel(host: str | None, port: int | None) -> None:
             public_url = _wait_for_url(proc)
         except click.ClickException:
             steps.fail("Starting tunnel")
-            try:
+            with contextlib.suppress(OSError):
                 proc.terminate()
-            except OSError:
-                pass
             raise
         steps.succeed("Starting tunnel")
 
@@ -221,5 +219,3 @@ def tunnel(host: str | None, port: int | None) -> None:
 
 # Keep module importable even on interpreters without ``sys.stderr`` quirks;
 # nothing to do here — the guard below is intentional documentation.
-if sys.version_info < (3, 9):  # pragma: no cover
-    raise RuntimeError("oi tunnel requires Python 3.9+")

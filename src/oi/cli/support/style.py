@@ -213,7 +213,7 @@ def render_bar(fraction, width=BAR_WIDTH, fill_char=None, color=None):
     filled = int(round(fraction * width))
     pct = int(round(fraction * 100))
     bar = fill * filled + empty * (width - filled)
-    return click.style("%s %3d%%" % (bar, pct), fg=color)
+    return click.style(f"{bar} {pct:3d}%", fg=color)
 
 
 # ---------------------------------------------------------------------------
@@ -322,9 +322,9 @@ class LoadingBar:
 
     def _run(self):
         stream = sys.stderr
-        prefix = "%s " % self.label if self.label else ""
+        prefix = f"{self.label} " if self.label else ""
         for frame in self._frames():
-            stream.write("\r%s%s" % (prefix, frame))
+            stream.write(f"\r{prefix}{frame}")
             stream.flush()
             if self._stop.wait(self.interval):
                 break
@@ -337,7 +337,7 @@ class LoadingBar:
         if self._thread is not None:
             return self
         if not self._animated and self.label:
-            click.echo(dim("%s..." % self.label), err=True)
+            click.echo(dim(f"{self.label}..."), err=True)
         if self._animated:
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
@@ -411,10 +411,10 @@ class ProgressBar:
     def _draw(self):
         if not self._animated:
             return
-        prefix = "%s " % self.label if self.label else ""
+        prefix = f"{self.label} " if self.label else ""
         fraction = self.current / self.total
         sys.stderr.write(
-            "\r%s%s" % (prefix, render_bar(fraction, self.width, self.fill_char, self.color))
+            f"\r{prefix}{render_bar(fraction, self.width, self.fill_char, self.color)}"
         )
         sys.stderr.flush()
 
@@ -434,20 +434,19 @@ class ProgressBar:
             return
         self._finished = True
         if self._animated:
-            prefix = "%s " % self.label if self.label else ""
+            prefix = f"{self.label} " if self.label else ""
             sys.stderr.write(
-                "\r%s%s\n"
-                % (prefix, render_bar(1.0, self.width, self.fill_char, self.color))
+                f"\r{prefix}{render_bar(1.0, self.width, self.fill_char, self.color)}\n"
             )
             sys.stderr.flush()
         elif self.label:
-            click.echo(dim("%s... done" % self.label), err=True)
+            click.echo(dim(f"{self.label}... done"), err=True)
         if final_text:
             echo_success(final_text)
 
     def __enter__(self):
         if not self._animated and self.label:
-            click.echo(dim("%s..." % self.label), err=True)
+            click.echo(dim(f"{self.label}..."), err=True)
         else:
             self._draw()
         return self
@@ -635,7 +634,7 @@ class StepList:
         total = (
             time.monotonic() - self._total_start if self._total_start else 0.0
         )
-        text = done_text or "Done in %.1fs" % total
+        text = done_text or f"Done in {total:.1f}s"
         if self._animated:
             click.echo("", err=True)
         click.echo(dim(text), err=True)
@@ -681,23 +680,23 @@ class StepList:
         pending_glyph, _ = _step_symbols()
         state = step["state"]
         if state == "pending":
-            return click.style("  %s %s" % (pending_glyph, label), dim=True)
+            return click.style(f"  {pending_glyph} {label}", dim=True)
         if state == "active":
             return self._render_active_line(step)
         if state == "done":
-            line = "  " + click.style("%s %s" % (CHECK, label), fg=_fg("success"))
-            return line + click.style(" (%.1fs)" % step["elapsed"], dim=True)
+            line = "  " + click.style(f"{CHECK} {label}", fg=_fg("success"))
+            return line + click.style(" ({:.1f}s)".format(step["elapsed"]), dim=True)
         # failed
-        line = "  " + click.style("%s %s" % (CROSS, label), fg=_fg("error"))
+        line = "  " + click.style(f"{CROSS} {label}", fg=_fg("error"))
         if step["detail"]:
-            line += click.style(" — %s" % step["detail"], fg=_fg("error"))
+            line += click.style(" — {}".format(step["detail"]), fg=_fg("error"))
         return line
 
     def _render_active_line(self, step, glyph=None):
         """Render the active step line, optionally with an animation glyph."""
         if glyph is None:
             _, glyph = _step_symbols()
-        return "  " + click.style("%s %s" % (glyph, step["label"]), fg=_fg("active"))
+        return "  " + click.style("{} {}".format(glyph, step["label"]), fg=_fg("active"))
 
     def _draw_line_at(self, index, text):
         """Write *text* over the step line at *index*.
@@ -708,10 +707,10 @@ class StepList:
         up = len(self._steps) - 1 - index
         stream = sys.stderr
         if up > 0:
-            stream.write("\x1b[%dA" % up)
+            stream.write(chr(27) + f"[{up}A")
         stream.write("\r\x1b[K" + text)
         if up > 0:
-            stream.write("\x1b[%dB" % up)
+            stream.write(chr(27) + f"[{up}B")
         stream.flush()
 
     def _redraw(self, index):
@@ -767,9 +766,9 @@ class StepList:
 
     def _plain_done_line(self, step):
         mark = CHECK if step["state"] == "done" else CROSS
-        text = "%s %s (%.1fs)" % (mark, step["label"], step["elapsed"])
+        text = "{} {} ({:.1f}s)".format(mark, step["label"], step["elapsed"])
         if step["state"] == "failed" and step["detail"]:
-            text += " — %s" % step["detail"]
+            text += " — {}".format(step["detail"])
         click.echo(text, err=True)
 
     # -- public transitions ----------------------------------------------
