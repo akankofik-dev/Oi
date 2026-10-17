@@ -264,21 +264,26 @@ def build_harness_request(
     content: str | list[dict[str, Any]] | None = None,
     messages: list[Any] | None = None,
     model: str | None = None,
+    model_context_window: int | dict[str, Any] | None = None,
     message_kwargs: dict[str, Any] | None = None,
     reasoning_overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if messages is not None:
         # Flag-gated context compression (identity when flags are OFF).
         # The model's real context window decides when smart switching kicks
-        # in; unknown models fall back to a conservative default.
+        # in; explicit provider metadata (when given) wins over the
+        # name-based table, and unknown models fall back to a conservative
+        # default instead of failing.
         from oi.infra.optimizations import (  # noqa: PLC0415
             compress_request_messages,
-            context_window_for_model,
+            resolve_context_window,
         )
 
         messages = compress_request_messages(
             messages,
-            context_window_tokens=context_window_for_model(model),
+            context_window_tokens=resolve_context_window(
+                model, explicit=model_context_window
+            ),
         )
         req: dict[str, Any] = {
             "messages": messages,

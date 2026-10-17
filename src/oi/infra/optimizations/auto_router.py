@@ -82,10 +82,15 @@ class LatencyTracker:
     ``integration.record_turn_latency`` when the ``auto_router`` flag is ON).
     Until data accrues, :meth:`fastest` returns None and routing keeps the
     current agent — a safe no-op.
+
+    Memory-safe: at most ``max_agents`` entries are kept; when the cap is
+    hit the entry with the oldest last-update is evicted.
     """
 
     alpha: float = 0.3
+    max_agents: int = 256
     _ema: dict[str, float] = field(default_factory=dict, init=False, repr=False)
+    _seen: dict[str, float] = field(default_factory=dict, init=False, repr=False)
 
     def record(self, agent_id: str, seconds: float) -> None:
         if seconds < 0:
@@ -94,6 +99,11 @@ class LatencyTracker:
         self._ema[agent_id] = seconds if prev is None else (
             self.alpha * seconds + (1 - self.alpha) * prev
         )
+        self._seen[agent_id] = time.time()
+        while len(self._ema) > self.max_agents:
+            oldest = min(self._seen.items(), key=lambda kv: kv[1])[0]
+            self._ema.pop(oldest, None)
+            self._seen.pop(oldest, None)
 
     def latency(self, agent_id: str) -> float | None:
         return self._ema.get(agent_id)
@@ -112,9 +122,31 @@ class ThreadContextStore:
     Stored per thread: a small summary plus the last user intent. Agents read
     this instead of relying on their own (agent-scoped) memory when a thread
     hops between agents.
+
+    Memory-safe: at most ``max_threads`` entries are kept (oldest evicted
+    first) and entries older than ``ttl_seconds`` are pruned on write, so
+    long-lived processes cannot accumulate one entry per thread forever.
     """
 
+    max_threads: int = 512
+    ttl_seconds: float = 24 * 3600.0
     _store: dict[str, dict[str, Any]] = field(default_factory=dict, init=False, repr=False)
+
+    def _prune_locked(self) -> None:
+        now = time.time()
+        stale = [
+            tid
+            for tid, entry in self._store.items()
+            if now - float(entry.get("updated_at", now)) > self.ttl_seconds
+        ]
+        for tid in stale:
+            self._store.pop(tid, None)
+        while len(self._store) >= self.max_threads:
+            oldest = min(
+                self._store.items(),
+                key=lambda kv: float(kv[1].get("updated_at", 0)),
+            )[0]
+            self._store.pop(oldest, None)
 
     def update(
         self,
@@ -124,6 +156,7 @@ class ThreadContextStore:
         intent: Intent | None = None,
         agent_id: str | None = None,
     ) -> None:
+        self._prune_locked()
         entry = self._store.setdefault(thread_id, {})
         if summary is not None:
             entry["summary"] = summary

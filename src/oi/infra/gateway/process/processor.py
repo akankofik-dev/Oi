@@ -1263,7 +1263,20 @@ class GlobalProcessor:
         emitted_attachment_keys: set[str] = set()
 
         try:
-            async for chunk in self._agent_manager.stream(agent_id, request):
+            # Resilient stream: 429 / context-length failures raised before
+            # the first chunk are retried (backoff honouring Retry-After,
+            # context recompressed on each retry). Once chunks flow, errors
+            # propagate as before — a partial turn is never restarted.
+            from oi.infra.optimizations.chat_resilience import (  # noqa: PLC0415
+                resilient_stream,
+            )
+
+            _stream = resilient_stream(
+                lambda: self._agent_manager.stream(agent_id, request),
+                request=request,
+                model=request.get("model") if isinstance(request, dict) else None,
+            )
+            async for chunk in _stream:
                 usage_tracker.observe(chunk)
                 history_tracker.observe(chunk)
                 from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
@@ -1367,6 +1380,15 @@ class GlobalProcessor:
                 usage=usage_tracker.usage,
             )
             await self._record_turn_history(thread_id, history_tracker)
+        # Turn fully persisted (or failed and persisted as incomplete above):
+        # drop the tracker's per-turn buffers so they are not retained.
+        try:
+            from oi.infra.history.recorder import RecordingTracker  # noqa: PLC0415
+
+            if isinstance(history_tracker, RecordingTracker):
+                history_tracker.release()
+        except Exception:
+            logger.exception("iter_turn_chunks: tracker release failed (non-fatal)")
         yield _maybe_stamp_team_host(self._done_chunk(thread_id), agent_id, team_host)
 
     async def iter_hitl_resume_chunks(

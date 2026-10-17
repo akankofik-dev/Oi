@@ -358,6 +358,21 @@ class RecordingTracker(TurnHistoryTracker):
     def wires(self) -> list[dict[str, Any]]:
         return [self._wire(part) for part in self._parts]
 
+    def release(self) -> None:
+        """Drop per-turn in-memory buffers after the turn is fully finished.
+
+        Call only once the turn's history is persisted and no caller will
+        read :meth:`wires` / ``inputs`` / ``flush`` again (e.g. at the very
+        end of a turn in ``processor.iter_turn_chunks``). Frees the part
+        list, signature cache, and index maps, so a long-lived process does
+        not retain one turn's full transcript per tracker.
+        """
+        self._parts.clear()
+        self._saved_signatures.clear()
+        self._indices.clear()
+        self._dirty.clear()
+        self._sources.clear()
+
     async def flush(self) -> None:
         """Commit changed messages before the caller forwards the current event."""
         if self.turn["format"] != "v2":

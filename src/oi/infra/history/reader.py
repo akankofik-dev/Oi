@@ -129,3 +129,38 @@ async def export_messages(
         # Populate the cache so the next export is served from RAM.
         reader.store(thread_id, messages)
     return messages  # type: ignore[no-any-return]
+
+
+async def export_messages_batched(
+    archive: HistoryArchive,
+    registry: Any,
+    agent_id: str,
+    thread_id: str,
+    *,
+    batch_size: int = 1000,
+) -> Any:
+    """Yield a thread's history in batches without loading it all at once.
+
+    Memory-safe alternative to :func:`export_messages` for very long
+    threads: each page is yielded (and can be released by the consumer)
+    before the next page is fetched, so peak memory is O(``batch_size``)
+    instead of O(thread length). Batches are yielded **newest-first**
+    (the same order :func:`read_page` returns); consumers that need
+    chronological order should process batches in reverse or reverse
+    within their own bounded window.
+    """
+    page = await read_page(archive, registry, agent_id, thread_id, limit=batch_size)
+    yield page["messages"]
+    seen = len(page["messages"])
+    while page["has_more"]:
+        page = await read_page(
+            archive,
+            registry,
+            agent_id,
+            thread_id,
+            limit=batch_size,
+            offset=seen,
+            cursor=page["next_cursor"],
+        )
+        yield page["messages"]
+        seen += len(page["messages"])

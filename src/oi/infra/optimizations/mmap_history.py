@@ -20,6 +20,7 @@ import mmap
 import os
 import re
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -48,15 +49,45 @@ def _safe_thread_id(thread_id: str) -> str:
 
 
 class MmapHistoryReader:
-    """RAM-speed thread-history cache with transparent SQLite fallback."""
+    """RAM-speed thread-history cache with transparent SQLite fallback.
 
-    def __init__(self, cache_dir: str | Path) -> None:
+    Memory/disk-safe: a snapshot larger than ``max_snapshot_bytes`` is never
+    cached, at most ``max_files`` snapshots are kept (oldest evicted first),
+    and snapshots older than ``ttl_seconds`` are treated as misses so a
+    stale cache can never be served indefinitely.
+    """
+
+    def __init__(
+        self,
+        cache_dir: str | Path,
+        *,
+        max_snapshot_bytes: int = 8 * 1024 * 1024,
+        max_files: int = 512,
+        ttl_seconds: float = 24 * 3600.0,
+    ) -> None:
         self._dir = Path(cache_dir)
         try:
             self._dir.mkdir(parents=True, exist_ok=True)
         except OSError:
             logger.warning("mmap_history: cannot create cache dir %s", self._dir)
         self._available = self._dir.is_dir()
+        self._max_snapshot_bytes = max_snapshot_bytes
+        self._max_files = max_files
+        self._ttl_seconds = ttl_seconds
+
+    def _evict_oldest_locked(self) -> None:
+        """Evict oldest snapshots until under ``max_files`` (best-effort)."""
+        try:
+            files = sorted(
+                self._dir.glob("*.json"), key=lambda p: p.stat().st_mtime
+            )
+        except OSError:
+            return
+        for path in files[: max(0, len(files) - self._max_files + 1)]:
+            try:
+                path.unlink()
+            except OSError:
+                continue
 
     @property
     def available(self) -> bool:
@@ -75,6 +106,12 @@ class MmapHistoryReader:
                 ensure_ascii=False,
                 default=str,
             ).encode("utf-8")
+            if len(payload) > self._max_snapshot_bytes:
+                logger.debug(
+                    "mmap_history: snapshot too large (%d bytes), not caching",
+                    len(payload),
+                )
+                return False
             target = self._path_for(thread_id)
             fd, tmp_name = tempfile.mkstemp(
                 dir=str(self._dir), prefix=target.name + ".", suffix=".tmp"
@@ -88,6 +125,7 @@ class MmapHistoryReader:
                     os.unlink(tmp_name)
                 except OSError:
                     pass
+            self._evict_oldest_locked()
             return True
         except (OSError, TypeError, ValueError):
             logger.exception("mmap_history: store failed for thread %s", thread_id)
@@ -99,6 +137,9 @@ class MmapHistoryReader:
             return None
         path = self._path_for(thread_id)
         try:
+            st = path.stat()
+            if time.time() - st.st_mtime > self._ttl_seconds:
+                return None
             with path.open("rb") as fh:
                 with mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ) as mm:
                     data = json.loads(mm.read().decode("utf-8"))
