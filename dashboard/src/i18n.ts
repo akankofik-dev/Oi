@@ -11,8 +11,8 @@ import {
 export type { UiLocale } from "./utils/localePrefs";
 
 async function loadLocaleBundle(locale: UiLocale) {
-  if (locale === "id") {
-    return (await import("./locales/id.json")).default;
+  if (locale === "zh") {
+    return (await import("./locales/zh.json")).default;
   }
   return (await import("./locales/en.json")).default;
 }
@@ -37,7 +37,7 @@ async function isSetupRequired(): Promise<boolean> {
 }
 
 async function hydrateToolLabels(lng: string) {
-  const locale = lng.startsWith("id") ? "id" : "en";
+  const locale = lng.startsWith("zh") ? "zh" : "en";
   try {
     const { labels } = await i18nApi.getToolLabels();
     i18n.addResourceBundle(
@@ -53,7 +53,7 @@ async function hydrateToolLabels(lng: string) {
 }
 
 async function hydrateSkillLabels(lng: string) {
-  const locale = lng.startsWith("id") ? "id" : "en";
+  const locale = lng.startsWith("zh") ? "zh" : "en";
   try {
     const { labels } = await i18nApi.getSkillLabels();
     i18n.addResourceBundle(
@@ -84,7 +84,7 @@ export function initI18n(): Promise<void> {
   if (!initPromise) {
     initPromise = (async () => {
       const initial = resolveInitialLocale();
-      const fallback: UiLocale = initial === "id" ? "en" : "id";
+      const fallback: UiLocale = initial === "zh" ? "en" : "zh";
       const primaryBundle = await loadLocaleBundle(initial);
 
       await i18n.use(initReactI18next).init({
@@ -93,7 +93,7 @@ export function initI18n(): Promise<void> {
         },
         lng: initial,
         fallbackLng: fallback,
-        supportedLngs: ["id", "en"],
+        supportedLngs: ["zh", "en"],
         nonExplicitSupportedLngs: true,
         interpolation: {
           escapeValue: false,
@@ -112,7 +112,7 @@ export function initI18n(): Promise<void> {
       }
 
       i18n.on("languageChanged", (lng) => {
-        const locale: UiLocale = lng.startsWith("id") ? "id" : "en";
+        const locale: UiLocale = lng.startsWith("zh") ? "zh" : "en";
         syncDocumentLang(locale);
         void ensureLocaleBundle(locale).then(() => hydrateServerLabels(lng));
       });

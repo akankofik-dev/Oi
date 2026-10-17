@@ -6,7 +6,6 @@ import { preferencesApi } from "../../../api/modules/preferences";
 import { applyUserLocale } from "../../../utils/locale";
 
 const languages = [
-  { value: "id", label: "Bahasa Indonesia" },
   { value: "en", label: "English" },
   { value: "zh", label: "简体中文" },
 ];
@@ -48,7 +47,7 @@ export default function LanguagePage() {
       </p>
 
       <Radio.Group
-        value={i18n.language?.startsWith("zh") ? "zh" : i18n.language?.startsWith("id") ? "id" : "en"}
+        value={i18n.language?.startsWith("zh") ? "zh" : "en"}
         onChange={(e) => void handleChange(e.target.value)}
       >
         <Space direction="vertical" size={12}>

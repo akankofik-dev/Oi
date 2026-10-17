@@ -466,7 +466,7 @@ export default function ExpertsPage() {
                   label: (
                     <span className={styles.viewModeLabel}>
                       <LayoutGrid size={14} />
-                      {t("experts.viewCard", "Kartu")}
+                      {t("experts.viewCard", "卡片")}
                     </span>
                   ),
                 },
@@ -475,7 +475,7 @@ export default function ExpertsPage() {
                   label: (
                     <span className={styles.viewModeLabel}>
                       <List size={14} />
-                      {t("experts.viewTable", "Tabel")}
+                      {t("experts.viewTable", "表格")}
                     </span>
                   ),
                 },
@@ -825,7 +825,7 @@ export default function ExpertsPage() {
   return (
     <PageShell.FillTabs
       title={t("pageShell.experts.title")}
-      subtitle={isMobile ? undefined : t("pageShell.experts.subtitle")}
+      subtitle={t("pageShell.experts.subtitle")}
     >
       <Tabs
         activeKey={activeTab}

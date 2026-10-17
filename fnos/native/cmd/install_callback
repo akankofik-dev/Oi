@@ -1,0 +1,183 @@
+#!/bin/bash
+#
+# Oi 本地版 — 安装后回调
+#
+# 安装向导只收集用户自己设的管理员账号（用户名 / 密码确认，显示名与邮箱可选）。
+# 凭据写入 PKGVAR/.env 与 oi-login.txt，供首次启动 oi init 使用。
+#
+set -euo pipefail
+
+# 共享函数库（find_python312 / fix_ownership_and_perms / free_oi_ports /
+# oi_generate_password / oi_validate_password / oi_write_login_file /
+# oi_render_config_wizard 等）
+# 打包时由 scripts/build-fpk.sh 注入；仓库内运行无此文件时跳过（函数缺失时再报错）。
+_OI_COMMON="$(dirname "$0")/common.sh"
+[ -f "$_OI_COMMON" ] || _OI_COMMON="/var/apps/oi-native/cmd/common.sh"
+[ -f "$_OI_COMMON" ] && source "$_OI_COMMON"
+
+# 释放 Oi 端口（8088=Docker 版，8089=本地版），杀掉残留/孤儿进程，避免重装端口冲突。
+free_oi_ports
+
+PKGVAR="${TRIM_PKGVAR:-/var/apps/oi-native/var}"
+APPDEST="${TRIM_APPDEST:-/var/apps/oi-native}"
+mkdir -p "$PKGVAR"
+ENV_FILE="$PKGVAR/.env"
+
+# 数据落在 FnOS 的 data-share 共享目录，升级时保留（凭据回落保存也在这里）。
+if [ -n "${TRIM_DATA_SHARE_PATHS:-}" ]; then
+    DATA_DIR="${TRIM_DATA_SHARE_PATHS%%:*}"
+else
+    DATA_DIR="${APPDEST}/shares/oi-native/data"
+fi
+mkdir -p "$DATA_DIR"
+
+fail_install() {
+    echo "[oi-native] $1" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+    echo "[oi-native] $1" >&2 || true
+    exit 1
+}
+
+if type oi_assert_native_arch >/dev/null 2>&1; then
+    if ! REASON="$(oi_assert_native_arch)"; then
+        fail_install "$REASON"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# 解析向导字段（wizard/install 的 field 名即环境变量名）
+# ---------------------------------------------------------------------------
+ADMIN_USER="$(oi_sanitize_value "${wizard_admin_username:-}")"
+ADMIN_DISPLAY="$(oi_sanitize_value "${wizard_admin_display_name:-}")"
+ADMIN_EMAIL="$(oi_sanitize_value "${wizard_admin_email:-}")"
+WIZARD_PASSWORD="$(oi_sanitize_value "${wizard_admin_password:-}")"
+WIZARD_CONFIRM="$(oi_sanitize_value "${wizard_admin_password_confirm:-}")"
+
+if ! ADMIN_PASS_REASON="$(oi_validate_install_fields "$ADMIN_USER" "$WIZARD_PASSWORD" "$WIZARD_CONFIRM" "$ADMIN_EMAIL" "$ADMIN_DISPLAY" 2>&1)"; then
+    fail_install "$ADMIN_PASS_REASON"
+fi
+ADMIN_PASS="$WIZARD_PASSWORD"
+
+{
+    echo "OI_PORT=8089"
+    echo "OI_BIND_HOST=0.0.0.0"
+    echo "OI_LOG_LEVEL=info"
+    echo "OI_ADMIN_USERNAME=${ADMIN_USER}"
+    echo "OI_DEFAULT_PASSWORD=${ADMIN_PASS}"
+    echo "OI_ADMIN_DISPLAY_NAME=${ADMIN_DISPLAY}"
+    echo "OI_ADMIN_EMAIL=${ADMIN_EMAIL}"
+} > "$ENV_FILE"
+
+chmod 600 "$ENV_FILE"
+echo "[oi-native] 已写入配置: $ENV_FILE" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# 管理员凭据应急备份（oi-login.txt）+ 渲染「设置」窗口用户名。
+# 忘记密码时从数据目录的 oi-login.txt 找回；设置窗口不再明文展示密码。
+# ---------------------------------------------------------------------------
+oi_write_login_file "$DATA_DIR" "$ADMIN_USER" "$ADMIN_PASS" 8089
+if [ -f "${DATA_DIR}/.oi/oi.db" ]; then
+    oi_mark_fnos_passwd_pending "$DATA_DIR"
+fi
+
+WIZARD_TEMPLATE="$APPDEST/wizard/config.template"
+WIZARD_DIR="$(dirname "$APPDEST")/wizard"
+[ -f "$WIZARD_TEMPLATE" ] || WIZARD_TEMPLATE="${APPDEST}/../wizard/config"
+oi_render_config_wizard "$WIZARD_TEMPLATE" "$WIZARD_DIR" "$ADMIN_USER" "$ADMIN_PASS" "$DATA_DIR"
+
+# ---------------------------------------------------------------------------
+# 修正属主/权限：.env 与 appdata 改回 oi-native，避免服务以 oi-native 启动
+# 时 . "$PKGVAR/.env" 报 Permission denied（root 写 root 属主，低权限用户读不了）。
+# ---------------------------------------------------------------------------
+fix_ownership_and_perms "$PKGVAR" "$ENV_FILE"
+
+# 校验 Python 3.12 是否存在
+if ! PY="$(find_python312)"; then
+    echo "[oi-native] 错误：飞牛系统中未找到 Python 3.12。" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+    echo "请先前往飞牛应用中心 → 开发工具 → 安装「Python 3.12」，然后重新安装 Oi 本地版。" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+    exit 1
+fi
+
+echo "[oi-native] 已检测到 Python 3.12: $PY" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+
+# ---------------------------------------------------------------------------
+# 让 Oi 本地版“开箱即用”：
+#   1) 给 oi-native 系统账户设置已知密码（= 管理员密码），
+#      便于工作台终端等场景使用。
+#   2) 授予 oi-native 免密码 sudo（NOPASSWD）。
+#      Oi 的远程桌面/浏览器等组件在运行时会以 oi-native 身份执行
+#      `sudo -n ...`（例如 desktop/setup.py 的 install/start/resize/uninstall），
+#      若 sudo 需要密码就会失败报 “a password is required”。
+#      这里在安装回调（root 权限）阶段一次性配好，之后用户在界面里安装
+#      远程桌面 / 在工作台终端里执行 sudo 都不再需要输入密码。
+# ---------------------------------------------------------------------------
+OI_USER="oi-native"
+
+# 设置 oi-native 登录密码为向导管理员密码（若账户不存在则跳过）
+if id "$OI_USER" >/dev/null 2>&1; then
+    echo "${OI_USER}:${ADMIN_PASS}" | chpasswd 2>/dev/null || true
+    echo "[oi-native] 已为 ${OI_USER} 设置登录密码（与管理员密码一致）" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+fi
+
+# 写入免密码 sudo 规则并做语法校验。
+# 这是本地版“远程桌面/浏览器/工作台终端”能正常工作的关键，必须成功；
+# 因此这里不使用 || true 静默失败，若写入或校验失败则让安装回调直接返回非零，
+# 避免飞牛显示“安装成功”但实际功能不可用（之前 printf+||true 导致文件被清空）。
+SUDOERS_FILE="/etc/sudoers.d/oi-native"
+cat > "$SUDOERS_FILE" <<'EOF'
+# 允许 oi-native 免密码执行任意命令（Oi 远程桌面/浏览器/工作台终端需要）
+# !requiretty：Oi 以内嵌子进程方式调用 `sudo -n ...`，没有 controlling tty；
+# 若系统 sudoers 默认开启 requiretty，这里必须显式关闭，否则会报
+# "sorry, you must have a tty to run sudo" 而让远程桌面/浏览器安装失败。
+Defaults:oi-native !requiretty
+oi-native ALL=(ALL) NOPASSWD: ALL
+EOF
+chmod 0440 "$SUDOERS_FILE"
+if command -v visudo >/dev/null 2>&1; then
+    if ! visudo -c -f "$SUDOERS_FILE" >/dev/null 2>&1; then
+        echo "[oi-native] 错误：写入的 sudoers 语法校验失败，请检查 ${SUDOERS_FILE}" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+        exit 1
+    fi
+fi
+echo "[oi-native] 已配置 ${OI_USER} 免密码 sudo" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+
+# ---------------------------------------------------------------------------
+# 将官方 oi CLI 暴露到 PATH，让用户安装后像官方一样直接用 `oi` 命令
+# （例如 `oi --help` / `oi provider list` / `oi agent list` /
+#   `oi user list` / `oi user passwd` / `oi skills ...` /
+#   `oi backup ...`）。真正的服务由飞牛应用中心托管（cmd/main 拉起
+#   bin/oi），本 CLI 仅作命令行入口。
+# 并做一次冒烟验证：CLI 能真实执行并输出版本号才算注册成功。
+# ---------------------------------------------------------------------------
+LAUNCHER="$APPDEST/bin/oi"
+chmod +x "$LAUNCHER" 2>/dev/null || true
+
+CLI_SRC="$APPDEST/bin/oi-cli"
+if [ -f "$CLI_SRC" ]; then
+    chmod +x "$CLI_SRC" 2>/dev/null || true
+    ln -sf "$CLI_SRC" /usr/local/bin/oi-cli
+    ln -sf "$CLI_SRC" /usr/local/bin/oi
+    echo "[oi-native] 已注册命令：oi / oi-cli -> $CLI_SRC" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+    # CLI 冒烟验证（不阻塞安装：失败只告警，首次启动后仍可用）
+    if "$CLI_SRC" version >/dev/null 2>&1; then
+        echo "[oi-native] CLI 冒烟验证通过：oi version 可正常执行" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+    else
+        echo "[oi-native] 警告：CLI 冒烟验证未通过（oi version 执行失败）；首次启动会自动用内置 whl 离线安装，之后 CLI 即可用。" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+    fi
+fi
+
+# 安装阶段先做账号初始化，避免应用中心 start 在 30 秒内超时、只显示「启动失败」。
+if [ -f "$LAUNCHER" ]; then
+    echo "[oi-native] 安装后预初始化 ..." >> "$PKGVAR/info.log"
+    prepare_rc=0
+    if id "$OI_USER" >/dev/null 2>&1 && command -v runuser >/dev/null 2>&1; then
+        runuser -u "$OI_USER" -- "$LAUNCHER" --prepare >> "$PKGVAR/info.log" 2>&1 || prepare_rc=$?
+    else
+        "$LAUNCHER" --prepare >> "$PKGVAR/info.log" 2>&1 || prepare_rc=$?
+    fi
+    if [ "$prepare_rc" != 0 ]; then
+        fail_install "首次初始化失败（退出码 ${prepare_rc}）。请查看应用日志 var/info.log，或确认已安装「Python 3.12」。"
+    fi
+    echo "[oi-native] 预初始化完成" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+fi
+
+exit 0

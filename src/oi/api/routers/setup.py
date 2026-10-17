@@ -152,7 +152,7 @@ def _authorize_setup_mid_wizard(authorization: str | None, server: Any) -> str |
     raise OiError(ErrorCode.SETUP_TOKEN_INVALID, "invalid or expired wizard token")
 
 
-async def _bootstrap_default_agent(server: Any, *, user_id: int, locale: str = "id") -> None:
+async def _bootstrap_default_agent(server: Any, *, user_id: int, locale: str = "zh") -> None:
     """Create the first default agent for a fresh install (pinned id ``main``)."""
     from oi.infra.agents.experts.default_agent import (
         SETUP_DEFAULT_AGENT_ID,
@@ -379,18 +379,6 @@ async def initial_admin(
         "access_token": access_token,
         "expires_in": ttl,
     }
-
-
-@router.post("/setup/resume-wizard", summary="Issue a fresh wizard token mid-setup")
-async def resume_wizard(server: Any = Depends(get_server)) -> dict[str, Any]:
-    """Issue a new wizard token after the admin exists but before finish."""
-    _enforce_wizard_token_phase(server)
-    require_database(server)
-    assert server.user_manager is not None
-    if server.user_manager.count() == 0:
-        raise OiError(ErrorCode.SETUP_TOKEN_INVALID, "admin not created yet", status=400)
-    token, ttl = server.wizard_tokens.issue()
-    return {"wizard_token": token, "expires_in": ttl}
 
 
 @router.post("/setup/test-provider", summary="Test provider draft connectivity")

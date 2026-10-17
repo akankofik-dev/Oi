@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import PageShell from "../../../layouts/PageShell";
-import { useIsMobile } from "../../../hooks/useIsMobile";
 import { apiErrorMessage } from "../../../utils/apiError";
 import {
   securityApi,
@@ -100,7 +99,6 @@ function PolicyFooter({
 
 export default function SecuritySettingsPage() {
   const { t } = useTranslation();
-  const isMobile = useIsMobile();
   const { user, allowedTabs, activeTab, forbidden, selectTab } =
     useGatedSearchTabs({
       tabs: TABS,
@@ -396,7 +394,7 @@ export default function SecuritySettingsPage() {
   return (
     <PageShell.Tabbed
       title={t("pageShell.security.title")}
-      subtitle={isMobile ? undefined : t("pageShell.security.subtitle")}
+      subtitle={t("pageShell.security.subtitle")}
       tabBar={
         <TabBar tabs={allowedTabs} activeKey={activeTab} onChange={selectTab} />
       }

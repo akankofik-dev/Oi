@@ -16,9 +16,9 @@ def resolve_binary(name: str) -> str:
     path = shutil.which(name)
     if not path:
         raise ValueError(
-            f"Perintah host {name!r} tidak ditemukan."
-            "Buka laci 'Konektor' Oi, minta admin memasang CLI, atau pasang sendiri di PATH host."
-            "Dilarang mencari atau memasang perintah itu di terminal Agent."
+            f"未找到主机命令 {name!r}。"
+            "请打开 Oi「连接器」抽屉，由管理员安装 CLI，或在主机 PATH 中自行安装。"
+            "禁止在 Agent 终端中查找或安装该命令。"
         )
     return path
 
@@ -46,9 +46,9 @@ def run_cli(
             check=False,
         )
     except FileNotFoundError as exc:
-        raise ValueError(f"Perintah {argv[0]!r} tidak ditemukan, periksa PATH") from exc
+        raise ValueError(f"未找到命令 {argv[0]!r}，请检查 PATH") from exc
     except subprocess.TimeoutExpired as exc:
-        raise ValueError(f"CLI kehabisan waktu (>{timeout_s:.0f}d): {' '.join(argv[:4])}") from exc
+        raise ValueError(f"CLI 超时（>{timeout_s:.0f}s）: {' '.join(argv[:4])}") from exc
 
     stdout = (completed.stdout or "").strip()
     stderr = (completed.stderr or "").strip()
@@ -70,7 +70,9 @@ def _format_cli_error(returncode: int, stdout: str, stderr: str) -> str:
             if not hint:
                 hint = str(err.get("hint") or "").strip()
         # Never forward CLI "run xxx" hints to agents — they cause shell/auth loops.
-        if hint and ("lark-cli" in hint.lower() or "wecom-cli" in hint.lower()):
+        if hint and any(
+            name in hint.lower() for name in ("lark-cli", "wecom-cli", "agently-cli", "obsidian")
+        ):
             hint = ""
         parts = [p for p in (message, hint) if p]
         if parts:

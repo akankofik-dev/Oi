@@ -13,7 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from scalar_fastapi import get_scalar_api_reference
 
-from oi.api.middleware.compression import TextGZipMiddleware
 from oi.api.middleware.jwt_auth import install as install_jwt_auth
 from oi.api.middleware.setup_lockdown import install as install_setup_lockdown
 from oi.api.openapi_meta import API_DESCRIPTION, OPENAPI_TAGS, configure_openapi
@@ -130,10 +129,6 @@ def build_app(server: OiServer) -> FastAPI:
             expose_headers=[ACCESS_TOKEN_RESPONSE_HEADER],
         )
 
-    # Compression is added first so it ends up outermost: dashboard assets are
-    # the bulk of first-paint bytes and must be compressed on the way out.
-    app.add_middleware(TextGZipMiddleware)
-
     from oi.api.middleware.bridge_proxy import install as install_bridge_proxy
 
     # Bridge proxy must sit inside JWT auth so ``request.state.oi_user`` is set
@@ -164,8 +159,8 @@ def build_app(server: OiServer) -> FastAPI:
     from oi.api.routers import (
         acp,
         admin,
-        agent_connections,
         agent_files,
+        agent_mcp,
         agent_tools,
         agents,
         auth,
@@ -191,6 +186,7 @@ def build_app(server: OiServer) -> FastAPI:
         media_generation,
         memory,
         memory_portable,
+        memory_storage,
         mobile,
         ollama_models,
         onnx_models,
@@ -215,6 +211,7 @@ def build_app(server: OiServer) -> FastAPI:
         voice,
         workspace,
     )
+    from oi.api.routers.decision import router as decision_router
     from oi.api.routers.filesystem import router as filesystem_router
     from oi.api.routers.observability import router as observability_router
     from oi.api.routers.providers import admin_router as admin_providers_router
@@ -242,6 +239,7 @@ def build_app(server: OiServer) -> FastAPI:
             _RouterMount(agents.router, "/api/agents", ["agents"]),
             _RouterMount(agent_tools.router, "/api", ["agents"]),
             _RouterMount(acp.router, "/api", ["agents"]),
+            _RouterMount(agent_mcp.router, "/api", ["agent-mcp"]),
             _RouterMount(chat.router, "/api", ["chat"]),
             _RouterMount(slash.router, "/api", ["slash"]),
             _RouterMount(connectors.router, "/api", ["connectors"]),
@@ -251,7 +249,7 @@ def build_app(server: OiServer) -> FastAPI:
             _RouterMount(channels.router, "/api", ["channels"]),
             _RouterMount(cron.router, "/api", ["cron"]),
             _RouterMount(settings.router, "/api", ["settings"]),
-            _RouterMount(agent_connections.router, "/api", ["settings"]),
+            _RouterMount(decision_router, "/api", ["settings"]),
             _RouterMount(envs.router, "/api", ["envs"]),
             _RouterMount(search.router, "/api", ["search"]),
             _RouterMount(providers.router, "/api/providers", ["providers"]),
@@ -280,6 +278,7 @@ def build_app(server: OiServer) -> FastAPI:
             _RouterMount(agent_files.router, "/api", ["agent_files"]),
             _RouterMount(memory.router, "/api", ["memory"]),
             _RouterMount(memory_portable.router, "/api", ["memory"]),
+            _RouterMount(memory_storage.router, "/api", ["memory"]),
             _RouterMount(proactive_care.router, "/api", ["proactive-care"]),
             _RouterMount(usage.router, "/api", ["usage"]),
             _RouterMount(usage.admin_router, "/api/admin", ["admin"]),

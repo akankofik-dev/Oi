@@ -136,27 +136,6 @@ def _agent_icon_url(row: Any, cfg: dict[str, Any]) -> str | None:
     return team_icon_url(stored)
 
 
-def _resolved_model_for_row(row: Any, server: Any | None) -> str | None:
-    """Return the actual model ref the agent will use (resolves 'auto').
-
-    This is what ``pick_default_model_ref()`` returns: the explicit
-    default_model if set, otherwise the first enabled model. Returns None
-    if it cannot be resolved (fail-open for the API).
-    """
-    # Explicit default_model takes precedence.
-    if getattr(row, "default_model", None):
-        return row.default_model
-    try:
-        if server is None or getattr(server, "app_runtime", None) is None:
-            return None
-        harness = server.app_runtime.agent_registry.get_agent(row.agent_id)
-        if harness is None:
-            return None
-        return harness.config.pick_default_model_ref()
-    except Exception:
-        return None
-
-
 def _row_dict(
     row: Any,
     *,
@@ -187,7 +166,6 @@ def _row_dict(
         "description": row.description,
         "persona_mbti": row.persona_mbti,
         "default_model": row.default_model,
-        "resolved_model": _resolved_model_for_row(row, server),
         "system_prompt": row.system_prompt,
         "state": row.last_state or "unknown",
         "last_error": row.last_error,

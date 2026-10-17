@@ -10,11 +10,11 @@ local Oi server. Runs in the foreground — press Ctrl+C to stop.
 
 from __future__ import annotations
 
+import contextlib
 import re
 import shutil
 import socket
 import subprocess
-import sys
 import time
 
 import click
@@ -88,9 +88,7 @@ def _spawn_cloudflared(binary: str, local_url: str) -> subprocess.Popen:
             bufsize=1,
         )
     except OSError as exc:
-        raise click.ClickException(
-            style.error(f"could not start cloudflared: {exc}")
-        ) from exc
+        raise click.ClickException(style.error(f"could not start cloudflared: {exc}")) from exc
 
 
 def _wait_for_url(proc: subprocess.Popen) -> str:
@@ -126,19 +124,17 @@ def _wait_for_url(proc: subprocess.Popen) -> str:
             if match:
                 return match.group(0)
     proc.terminate()
-    raise click.ClickException(
-        style.error("timed out waiting for the public URL from cloudflared")
-    )
+    raise click.ClickException(style.error("timed out waiting for the public URL from cloudflared"))
 
 
 def _print_active_panel(public_url: str, local_url: str) -> None:
     """Print the cool "tunnel is live" panel."""
     click.echo()
-    click.echo(
-        click.style("\U0001f310 Oi Tunnel Active!", fg=style.fg("success"), bold=True)
-    )
+    click.echo(click.style("\U0001f310 Oi Tunnel Active!", fg=style.fg("success"), bold=True))
     click.echo()
-    click.echo(f"  {highlight('Public URL:')}  {click.style(public_url, fg=style.fg('active'), bold=True)}")
+    click.echo(
+        f"  {highlight('Public URL:')}  {click.style(public_url, fg=style.fg('active'), bold=True)}"
+    )
     click.echo(f"  {highlight('Local:')}       {dim(local_url)}")
     click.echo()
     click.echo(dim("  Press Ctrl+C to stop"))
@@ -207,10 +203,8 @@ def tunnel(host: str | None, port: int | None) -> None:
             public_url = _wait_for_url(proc)
         except click.ClickException:
             steps.fail("Starting tunnel")
-            try:
+            with contextlib.suppress(OSError):
                 proc.terminate()
-            except OSError:
-                pass
             raise
         steps.succeed("Starting tunnel")
 
@@ -221,5 +215,3 @@ def tunnel(host: str | None, port: int | None) -> None:
 
 # Keep module importable even on interpreters without ``sys.stderr`` quirks;
 # nothing to do here — the guard below is intentional documentation.
-if sys.version_info < (3, 9):  # pragma: no cover
-    raise RuntimeError("oi tunnel requires Python 3.9+")

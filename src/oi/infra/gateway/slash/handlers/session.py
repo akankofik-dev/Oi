@@ -8,6 +8,7 @@ from oi_harness.slash import SlashCommand, SlashSink
 
 from oi.i18n.domains.slash import tr
 from oi.infra.db.repos.threads import clip_thread_title
+from oi.infra.errors import OiError
 from oi.infra.gateway.slash.ctx import (
     SlashCtx,
     chat_type,
@@ -133,6 +134,14 @@ async def cmd_delete(d: SlashDispatcher, cmd: SlashCommand, ctx: SlashCtx, sink:
         return
     if active and target.thread_id == active:
         await sink.text(tr("delete.active", lang))
+        return
+    if ctx.agent_manager is None:
+        await sink.text(tr("delete.failed", lang))
+        return
+    try:
+        await ctx.agent_manager.delete_thread_checkpoint(ctx.agent_id, target.thread_id)
+    except OiError:
+        await sink.text(tr("delete.failed", lang))
         return
     ctx.thread_registry.delete_thread(target.thread_id)
     await sink.text(tr("delete.done", lang, short=target.thread_id[-6:]))

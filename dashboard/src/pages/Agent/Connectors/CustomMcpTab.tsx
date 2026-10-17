@@ -26,6 +26,11 @@ import {
   type EditorMode,
   type ServerCardState,
 } from "./customMcpUtils";
+import {
+  isAuthPopupBlocked,
+  navigateAuthWindow,
+  tryOpenAuthPopup,
+} from "./openAuthWindow";
 import styles from "./index.module.less";
 
 interface CustomMcpTabProps {
@@ -83,7 +88,7 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
       message.error(
         apiErrorMessage(
           e,
-          t("connectors.customMcp.loadFailed", "Gagal memuat MCP kustom"),
+          t("connectors.customMcp.loadFailed", "加载自定义 MCP 失败"),
           t,
         ),
       );
@@ -135,7 +140,7 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
     } catch (e) {
       console.error(e);
       message.error(
-        apiErrorMessage(e, t("connectors.customMcp.saveFailed", "Gagal menyimpan"), t),
+        apiErrorMessage(e, t("connectors.customMcp.saveFailed", "保存失败"), t),
       );
       await load();
     }
@@ -246,11 +251,11 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
         return next;
       });
       notifyConnectorsChanged();
-      message.success(t("connectors.deleteSuccess", "Dihapus"));
+      message.success(t("connectors.deleteSuccess", "已删除"));
     } catch (e) {
       console.error(e);
       message.error(
-        apiErrorMessage(e, t("connectors.deleteFailed", "Penghapusan gagal"), t),
+        apiErrorMessage(e, t("connectors.deleteFailed", "删除失败"), t),
       );
       await load();
     }
@@ -287,10 +292,10 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
       if (!fromSave) {
         if (tools.length === 0) {
           message.success(
-            t("connectors.probeToolsEmpty", "Koneksi OK, tetapi tidak ada tool ditemukan"),
+            t("connectors.probeToolsEmpty", "连接正常，但未发现可用工具"),
           );
         } else {
-          message.success(t("connectors.customMcp.probeComplete", "Koneksi terverifikasi"));
+          message.success(t("connectors.customMcp.probeComplete", "连接正常"));
         }
       }
       return;
@@ -323,7 +328,7 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
     }
     setOauthAvailable((prev) => ({ ...prev, [card.key]: false }));
     if (!fromSave) {
-      message.error(result.error ?? t("connectors.probeFailed", "Uji gagal"));
+      message.error(result.error ?? t("connectors.probeFailed", "探测失败"));
     }
   };
 
@@ -348,7 +353,7 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
     } catch (e) {
       console.error(e);
       message.error(
-        apiErrorMessage(e, t("connectors.probeFailed", "Uji gagal"), t),
+        apiErrorMessage(e, t("connectors.probeFailed", "探测失败"), t),
       );
     } finally {
       setProbingKey(null);
@@ -365,8 +370,8 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
         setJsonError(null);
         return parsed as CustomMcpServers;
       } catch {
-        setJsonError(t("connectors.customMcp.jsonInvalid", "JSON tidak valid"));
-        message.error(t("connectors.customMcp.jsonInvalid", "JSON tidak valid"));
+        setJsonError(t("connectors.customMcp.jsonInvalid", "JSON 格式无效"));
+        message.error(t("connectors.customMcp.jsonInvalid", "JSON 格式无效"));
         return null;
       }
     }
@@ -376,17 +381,17 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
       const code = e instanceof Error ? e.message : "";
       if (code === "duplicate_name") {
         message.warning(
-          t("connectors.customMcp.duplicateName", "ID Server harus unik"),
+          t("connectors.customMcp.duplicateName", "服务器名称不能重复"),
         );
       } else if (code === "empty_name") {
         message.warning(
-          t("connectors.customMcp.emptyName", "ID Server diperlukan"),
+          t("connectors.customMcp.emptyName", "请填写服务器名称"),
         );
       } else {
         message.warning(
           apiErrorMessage(
             e,
-            t("connectors.customMcp.visualInvalid", "Perbaiki nama dan kolom wajib sebelum beralih"),
+            t("connectors.customMcp.visualInvalid", "请检查配置后重试"),
             t,
           ),
         );
@@ -404,7 +409,7 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
       const nextCards = applySavedServers(saved.servers, cards);
       notifyConnectorsChanged();
       message.success(
-        t("connectors.customMcp.saveSuccess", "MCP kustom tersimpan"),
+        t("connectors.customMcp.saveSuccess", "自定义 MCP 已保存"),
       );
       if (probeOnSave && showProbeSection) {
         for (const card of nextCards) {
@@ -417,7 +422,7 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
     } catch (e) {
       console.error(e);
       message.error(
-        apiErrorMessage(e, t("connectors.customMcp.saveFailed", "Gagal menyimpan"), t),
+        apiErrorMessage(e, t("connectors.customMcp.saveFailed", "保存失败"), t),
       );
     } finally {
       setSaving(false);
@@ -429,7 +434,7 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
       cardsToServers([card]);
     } catch {
       message.warning(
-        t("connectors.customMcp.probeNeedConfig", "Isi konfigurasi sebelum menguji"),
+        t("connectors.customMcp.probeNeedConfig", "请先填写完整配置再探测"),
       );
       return;
     }
@@ -439,11 +444,11 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
   const handleOAuth = async (card: ServerCardState) => {
     const serverName = card.name.trim();
     if (!serverName) {
-      message.warning(t("connectors.customMcp.emptyName", "ID Server diperlukan"));
+      message.warning(t("connectors.customMcp.emptyName", "请填写服务器名称"));
       return;
     }
-    const popup = window.open("", "oi-oauth", "width=520,height=720");
-    if (!popup) {
+    const popup = tryOpenAuthPopup("", "oi-oauth", "width=520,height=720");
+    if (isAuthPopupBlocked(popup)) {
       message.error(
         t(
           "connectors.oauthPopupBlocked",
@@ -470,7 +475,7 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
       settled = true;
       cleanup();
       try {
-        popup.close();
+        popup?.close();
       } catch {
         // ignore
       }
@@ -483,14 +488,14 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
           await runProbe(refreshed, { byName: true });
         }
         message.success(
-          t("connectors.oauthConfigured", "Terotorisasi — uji atau simpan sekarang"),
+          t("connectors.oauthConfigured", "已授权，可直接探测或保存"),
         );
       } catch (e) {
         console.error(e);
         message.error(
           apiErrorMessage(
             e,
-            t("connectors.oauthFailed", "Gagal mengambil hasil OAuth"),
+            t("connectors.oauthFailed", "获取授权结果失败"),
             t,
           ),
         );
@@ -519,7 +524,7 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
       const servers = resolveServersForSave();
       if (!servers) {
         try {
-          popup.close();
+          popup?.close();
         } catch {
           // ignore
         }
@@ -545,22 +550,22 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
         cleanup();
         setAuthorizingKey(null);
         message.error(
-          t("connectors.oauthTimedOut", "Otorisasi habis waktu; coba auth sekali klik lagi"),
+          t("connectors.oauthTimedOut", "授权超时，请重试一键授权"),
         );
       }, 120_000);
-      popup.location.replace(authorize_url);
+      navigateAuthWindow(popup, authorize_url);
     } catch (e) {
       cleanup();
       setAuthorizingKey(null);
       try {
-        popup.close();
+        popup?.close();
       } catch {
         // ignore
       }
       message.error(
         apiErrorMessage(
           e,
-          t("connectors.oauthStartFailed", "Tidak dapat memulai OAuth"),
+          t("connectors.oauthStartFailed", "无法启动 OAuth"),
           t,
         ),
       );
@@ -610,7 +615,7 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
             checked={probeOnSave}
             onChange={(e) => setProbeOnSave(e.target.checked)}
           >
-            {t("connectors.customMcp.probeOnSave", "Uji koneksi setelah simpan")}
+            {t("connectors.customMcp.probeOnSave", "保存后自动探测连接")}
           </Checkbox>
           <p className={styles.customMcpFooterHint}>
             {t(
@@ -650,7 +655,7 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
           options={[
             {
               value: "visual",
-              label: t("connectors.customMcp.modeVisual", "Visual"),
+              label: t("connectors.customMcp.modeVisual", "可视化"),
             },
             {
               value: "json",
@@ -692,7 +697,7 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
               >
                 <Globe size={18} />
                 <span>
-                  {t("connectors.customMcp.addHttp", "Tambah Server HTTP")}
+                  {t("connectors.customMcp.addHttp", "添加 HTTP Server")}
                 </span>
                 <Plus size={16} />
               </button>
@@ -703,7 +708,7 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
               >
                 <Terminal size={18} />
                 <span>
-                  {t("connectors.customMcp.addStdio", "Tambah Server Stdio")}
+                  {t("connectors.customMcp.addStdio", "添加 Stdio Server")}
                 </span>
                 <Plus size={16} />
               </button>
@@ -711,7 +716,7 @@ export function CustomMcpTab({ focusServerName }: CustomMcpTabProps) {
 
             <div className={styles.customMcpListSection}>
               <div className={styles.customMcpListTitle}>
-                {t("connectors.customMcp.listTitle", "Server yang dikonfigurasi")}
+                {t("connectors.customMcp.listTitle", "已添加的服务器")}
                 {cards.length > 0 ? (
                   <span className={styles.customMcpListCount}>
                     {cards.length}

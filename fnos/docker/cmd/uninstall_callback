@@ -1,0 +1,29 @@
+#!/bin/bash
+# Oi — 卸载后回调
+# 根据卸载向导选择：完全删除时清理 data-share 用户数据；保留数据时不作处理。
+set -euo pipefail
+
+_OI_COMMON="$(dirname "$0")/common.sh"
+[ -f "$_OI_COMMON" ] || _OI_COMMON="/var/apps/oi/cmd/common.sh"
+[ -f "$_OI_COMMON" ] && source "$_OI_COMMON"
+
+if [ "${wizard_delete_data:-no}" = "yes" ]; then
+    DATA_DIR="${TRIM_DATA_SHARE_PATHS:-}"
+    DATA_DIR="${DATA_DIR%%:*}"
+    if [ -z "$DATA_DIR" ] && type oi_data_share_dir >/dev/null 2>&1; then
+        DATA_DIR="$(oi_data_share_dir oi/data)"
+    fi
+    if [ -n "$DATA_DIR" ] && [ -d "$DATA_DIR" ]; then
+        rm -rf "$DATA_DIR" 2>/dev/null || true
+        echo "[oi] 已删除用户数据: $DATA_DIR" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>/dev/null || true
+    fi
+    LEGACY=""
+    if type oi_legacy_docker_data_dir >/dev/null 2>&1; then
+        LEGACY="$(oi_legacy_docker_data_dir)"
+    fi
+    if [ -n "$LEGACY" ] && [ -d "$LEGACY" ] && [ "$LEGACY" != "$DATA_DIR" ]; then
+        rm -rf "$LEGACY" 2>/dev/null || true
+    fi
+fi
+
+exit 0

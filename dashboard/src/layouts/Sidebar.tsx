@@ -202,7 +202,7 @@ function NavItemButton({
           {t(item.labelKey)}
           {item.key === "admin-advanced" && role === "admin" && hasUpdate ? (
             <span className={styles.navUpdateBadge}>
-              {t("nav.newVersionBadge", "Versi baru")}
+              {t("nav.newVersionBadge", "有新版本")}
             </span>
           ) : null}
           {item.badge && (
@@ -211,8 +211,6 @@ function NavItemButton({
               style={{
                 fontSize: typeSize(9, isMobile),
                 fontWeight: 600,
-                color: "#fff",
-                backgroundColor: "#ff4d4f",
                 padding: "1px 4px",
                 borderRadius: "2px",
                 whiteSpace: "nowrap",
@@ -235,8 +233,8 @@ function NavItemButton({
             e.stopPropagation();
             onExpandChatRail?.();
           }}
-          aria-label={t("chat.expandHistorySidebar", "Tampilkan riwayat percakapan")}
-          title={t("chat.expandHistorySidebar", "Tampilkan riwayat percakapan")}
+          aria-label={t("chat.expandHistorySidebar", "展开对话历史")}
+          title={t("chat.expandHistorySidebar", "展开对话历史")}
         >
           <ArrowRightLeft size={14} strokeWidth={1.8} aria-hidden />
         </button>

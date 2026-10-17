@@ -12,6 +12,8 @@ interface SkillsTableProps {
   onView: (skill: SkillSpec) => void;
   onToggleEnabled: (skill: SkillSpec) => void;
   onDelete?: (skill: SkillSpec) => void;
+  selectedSlugs?: ReadonlySet<string>;
+  onSelectedSlugsChange?: (slugs: string[]) => void;
 }
 
 export default function SkillsTable({
@@ -20,6 +22,8 @@ export default function SkillsTable({
   onView,
   onToggleEnabled,
   onDelete,
+  selectedSlugs,
+  onSelectedSlugsChange,
 }: SkillsTableProps) {
   const { t } = useTranslation();
   const skillDisplayName = useSkillDisplayName();
@@ -55,7 +59,7 @@ export default function SkillsTable({
       ),
     },
     {
-      title: t("skills.table.enabled", "Diaktifkan"),
+      title: t("skills.table.enabled", "启用"),
       dataIndex: "enabled",
       width: "8%",
       align: "center",
@@ -69,7 +73,7 @@ export default function SkillsTable({
       ),
     },
     {
-      title: t("skills.table.actions", "Aksi"),
+      title: t("skills.table.actions", "操作"),
       key: "actions",
       width: kind === "custom" ? 88 : 56,
       align: "center",
@@ -111,17 +115,40 @@ export default function SkillsTable({
     },
   ];
 
+  const rowKey = (row: SkillSpec) => `${row.kind}-${row.slug}`;
+
   return (
     <Table<SkillSpec>
       className={styles.skillsTable}
-      rowKey={(row) => `${row.kind}-${row.slug}`}
+      rowKey={rowKey}
       columns={columns}
       dataSource={skills}
       pagination={false}
       size="middle"
       scroll={{ x: 720 }}
+      rowSelection={
+        selectedSlugs && onSelectedSlugsChange
+          ? {
+              selectedRowKeys: skills
+                .filter((row) => selectedSlugs.has(row.slug))
+                .map(rowKey),
+              onChange: (keys) => {
+                const chosen = new Set(keys.map(String));
+                onSelectedSlugsChange(
+                  skills
+                    .filter((row) => chosen.has(rowKey(row)))
+                    .map((row) => row.slug),
+                );
+              },
+            }
+          : undefined
+      }
       onRow={(row) => ({
-        onClick: () => onView(row),
+        onClick: (event) => {
+          const target = event.target as HTMLElement;
+          if (target.closest(".ant-checkbox, .ant-checkbox-wrapper")) return;
+          onView(row);
+        },
         style: { cursor: "pointer" },
       })}
     />

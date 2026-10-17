@@ -6,6 +6,7 @@ import dashboardIcon from "../../../../assets/channels/dashboard.svg";
 import yuanbaoIcon from "../../../../assets/channels/yuanbao.svg";
 import wecomIcon from "../../../../assets/channels/wecom.svg";
 import weixinIcon from "../../../../assets/channels/weixin.svg";
+import oiIcon from "../../../../assets/channels/oi.svg";
 import consoleIcon from "../../../../assets/channels/console.svg";
 import telegramIcon from "../../../../assets/channels/telegram.svg";
 import mqttIcon from "../../../../assets/channels/mqtt.png";
@@ -27,7 +28,8 @@ export type ChannelKey =
   | "mqtt"
   | "telegram"
   | "dashboard"
-  | "agentchat";
+  | "agentchat"
+  | "oibot";
 
 /**
  * Channel kinds backed by Oi ``ChannelKind`` / oi-gateway ``BUILTIN_CHANNELS``.
@@ -87,6 +89,7 @@ export const CHANNEL_LABEL_KEYS: Record<ChannelKey, string> = {
   telegram: "channels.label_telegram",
   dashboard: "channels.label_dashboard",
   agentchat: "channels.label_agentchat",
+  oibot: "channels.label_oibot",
 };
 
 /** Hardcoded Chinese labels used as fallback when t() returns the key. */
@@ -103,6 +106,7 @@ export const CHANNEL_LABELS: Record<ChannelKey, string> = {
   telegram: "Telegram",
   dashboard: "控制台",
   agentchat: "AgentChat",
+  oibot: "OiBot",
 };
 
 export const CHANNEL_ICONS: Record<ChannelKey, string> = {
@@ -118,6 +122,7 @@ export const CHANNEL_ICONS: Record<ChannelKey, string> = {
   telegram: telegramIcon,
   dashboard: dashboardIcon,
   agentchat: consoleIcon,
+  oibot: oiIcon,
 };
 
 /** Brand accent per channel — used for cron task card stripes, badges, etc. */
@@ -134,6 +139,7 @@ export const CHANNEL_COLORS: Record<ChannelKey, string> = {
   discord: "#5865F2",
   dashboard: "#6366F1",
   agentchat: "#64748B",
+  oibot: "#10B981",
 };
 
 export function getChannelColor(channel: string): string {
@@ -152,6 +158,7 @@ export const CHANNEL_URLS: Partial<Record<ChannelKey, string>> = {
   yuanbao: "https://yuanbao.tencent.com/bot",
   wecom: "https://work.weixin.qq.com/wework_admin/frame#/aiHelper/create",
   telegram: "https://t.me/BotFather",
+  oibot: "https://oi.cloud.tencent.com",
 };
 
 /** A single field of a channel's config form. */
@@ -363,6 +370,10 @@ export const CHANNEL_FIELDS: Partial<Record<ChannelKey, ChannelField[]>> = {
     { name: "token", label: "Token", type: "password", required: true },
     { name: "base_url", label: "Base URL" },
   ],
+  oibot: [
+    { name: "api_key", label: "API Key", type: "password", required: true },
+    { name: "api_base_url", label: "API Base URL", required: true },
+  ],
   xiaoyi: [
     { name: "ak", label: "Access Key (AK)", required: true },
     { name: "sk", label: "Secret Key (SK)", type: "password", required: true },
@@ -389,6 +400,12 @@ export const CHANNEL_FIELDS: Partial<Record<ChannelKey, ChannelField[]>> = {
   ],
   telegram: [
     { name: "bot_token", label: "Bot Token", type: "password", required: true },
+    {
+      name: "allowed_user_ids",
+      label: "channels.telegramAllowedUsers",
+      type: "textarea",
+      helpKey: "channels.telegramAllowedUsersHelp",
+    },
     {
       name: "http_proxy",
       label: "HTTP Proxy",
@@ -468,4 +485,101 @@ export function hasRequiredCredentials(
     const v = config[field];
     return v !== undefined && v !== null && String(v).trim() !== "";
   });
+}
+
+/**
+ * Catalogue entry contributed by an installed ``kind: channel`` plugin
+ * (shape of ``GET /api/channels/plugin-kinds`` items).
+ */
+export interface PluginChannelKindInfo {
+  kind: string;
+  label: string;
+  icon: string;
+  intro_url: string;
+  fields?: {
+    name: string;
+    label?: string;
+    type?: string;
+    placeholder?: string;
+    required?: boolean;
+  }[];
+  plugin_id: string;
+}
+
+/** Kinds registered at runtime through ``registerPluginChannelKind``. */
+const PLUGIN_CHANNEL_KINDS: string[] = [];
+
+export function replacePluginChannelKinds(
+  infos: PluginChannelKindInfo[],
+): void {
+  for (const kind of PLUGIN_CHANNEL_KINDS) {
+    const key = kind as ChannelKey;
+    const index = CHANNEL_KEYS.indexOf(key);
+    if (index >= 0) CHANNEL_KEYS.splice(index, 1);
+    delete (CHANNEL_LABELS as Partial<Record<string, string>>)[kind];
+    delete (CHANNEL_ICONS as Partial<Record<string, string>>)[kind];
+    delete (CHANNEL_URLS as Partial<Record<string, string>>)[kind];
+    delete (CHANNEL_FIELDS as Partial<Record<string, ChannelField[]>>)[kind];
+  }
+  PLUGIN_CHANNEL_KINDS.length = 0;
+  for (const info of infos) registerPluginChannelKind(info);
+}
+
+/** True once ``registerPluginChannelKind`` has accepted this kind. */
+export function isPluginChannelKind(key: string): boolean {
+  return PLUGIN_CHANNEL_KINDS.includes(key);
+}
+
+/**
+ * Merge one plugin-contributed kind into the catalogue lookups above.
+ *
+ * Builtin constants stay compile-time; plugin kinds join the same lookup
+ * tables so ChannelCard / ChannelDrawer need no per-kind code. Idempotent
+ * within one catalogue snapshot; builtin kinds are never shadowed.
+ * Use replacePluginChannelKinds to apply a refreshed snapshot.
+ * Returns true when the kind was added.
+ */
+export function registerPluginChannelKind(
+  info: PluginChannelKindInfo,
+): boolean {
+  const kind = String(info?.kind ?? "")
+    .trim()
+    .toLowerCase();
+  if (!kind || PLUGIN_CHANNEL_KINDS.includes(kind)) return false;
+  if (CHANNEL_KEYS.includes(kind as ChannelKey)) return false;
+
+  PLUGIN_CHANNEL_KINDS.push(kind);
+  const typed = kind as ChannelKey;
+  CHANNEL_KEYS.push(typed);
+  // No CHANNEL_LABEL_KEYS entry on purpose: an unknown i18n key would render
+  // verbatim, so the label falls back to CHANNEL_LABELS / the raw kind.
+  if (info.label) {
+    (CHANNEL_LABELS as Record<string, string>)[typed] = String(info.label);
+  }
+  if (info.icon) {
+    (CHANNEL_ICONS as Record<string, string>)[typed] = String(info.icon);
+  }
+  if (info.intro_url) {
+    CHANNEL_URLS[typed] = String(info.intro_url);
+  }
+  const fields = Array.isArray(info.fields) ? info.fields : [];
+  if (fields.length > 0) {
+    (CHANNEL_FIELDS as Record<string, ChannelField[]>)[typed] = fields.map(
+      (f) => ({
+        name: String(f?.name ?? ""),
+        label: String(f?.label ?? f?.name ?? ""),
+        type:
+          f?.type === "password" ||
+          f?.type === "textarea" ||
+          f?.type === "json" ||
+          f?.type === "switch"
+            ? f.type
+            : "text",
+        placeholder: f?.placeholder ? String(f.placeholder) : undefined,
+        required: f?.required === true,
+      }),
+    );
+  }
+  // Kinds without fields keep the drawer's raw-JSON fallback editor.
+  return true;
 }

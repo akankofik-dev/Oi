@@ -59,7 +59,7 @@ export default function AdminStep({ createdCreds, onBack, onCreated }: Props) {
     }
     setSubmitting(true);
     try {
-      const locale = i18n.language?.startsWith("id") ? "id" : "en";
+      const locale = i18n.language?.startsWith("zh") ? "zh" : "en";
       const created = await wizardApi.createAdmin(
         {
           username: values.username,

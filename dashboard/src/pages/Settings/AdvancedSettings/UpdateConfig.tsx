@@ -27,8 +27,8 @@ import styles from "./UpdateConfig.module.less";
 
 /** Shell snippets shown in the manual upgrade guide (commands are locale-agnostic). */
 const UPGRADE_GUIDE_CODE = {
-  installerUnix: `curl -sSL https://raw.githubusercontent.com/akankofik-dev/Oi/main/install-oi.sh | bash`,
-  installerWin: `irm https://raw.githubusercontent.com/akankofik-dev/Oi/main/install-oi.ps1 | iex`,
+  installerUnix: `curl -fsSL https://finnie-1258344699.cos.ap-guangzhou.myqcloud.com/oi/install.sh | bash`,
+  installerWin: `irm https://finnie-1258344699.cos.ap-guangzhou.myqcloud.com/oi/install.ps1 | iex`,
   cli: `oi update
 # or non-interactive:
 oi update --yes

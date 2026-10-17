@@ -47,34 +47,18 @@ def list_plugins(ctx: click.Context) -> None:
 @click.option("--force", is_flag=True, help="Reinstall if the plugin id already exists.")
 def install_plugin(source: str, force: bool) -> None:
     """Install from a local directory or ZIP URL."""
-    from oi.cli.support.style import captured, echo_error, echo_success, step_list
-
     mgr = _manager()
     path = Path(source).expanduser()
-    is_url = source.startswith("http://") or source.startswith("https://")
-    if not path.is_dir() and not is_url:
-        raise click.ClickException(f"not a directory or URL: {source}")
-
-    # NOTE: plugin dep installs (pip inside oi_harness) are captured —
-    # the user only sees the clean checklist, never raw installer output.
-    step_label = (
-        "Downloading plugin" if is_url else "Copying plugin files"
-    )
-    with step_list("Installing plugin") as steps:
-        steps.begin(step_label)
-        try:
-            with captured():
-                if path.is_dir():
-                    loaded = mgr.install_path(path, force=force)
-                else:
-                    loaded = mgr.install_url(source, force=force)
-        except OiError as exc:
-            steps.fail(step_label, "install failed")
-            echo_error(exc.message)
-            raise SystemExit(1)
-        steps.succeed(step_label)
-
-    echo_success(f"Installed plugin {loaded.manifest.id} v{loaded.manifest.version}")
+    try:
+        if path.is_dir():
+            loaded = mgr.install_path(path, force=force)
+        elif source.startswith("http://") or source.startswith("https://"):
+            loaded = mgr.install_url(source, force=force)
+        else:
+            raise click.ClickException(f"not a directory or URL: {source}")
+    except OiError as exc:
+        raise click.ClickException(exc.message) from exc
+    click.echo(f"Installed plugin {loaded.manifest.id} v{loaded.manifest.version}")
     click.echo(
         "Note: if oi run is already running, call POST /api/plugins/reload "
         "(Admin → Plugins → Reload) or restart the server so status becomes loaded.",

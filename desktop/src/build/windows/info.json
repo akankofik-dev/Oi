@@ -1,0 +1,15 @@
+{
+  "fixed": {
+    "file_version": "0.9.26"
+  },
+  "info": {
+    "0000": {
+      "ProductVersion": "0.9.26",
+      "CompanyName": "Oi",
+      "FileDescription": "Oi desktop",
+      "LegalCopyright": "Copyright © 2026",
+      "ProductName": "Oi",
+      "Comments": "Oi desktop shell"
+    }
+  }
+}

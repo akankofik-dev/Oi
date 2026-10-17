@@ -17,13 +17,13 @@ import {
   Mic2,
   Plus,
   RefreshCw,
+  Scale,
   Search,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import PageShell from "../../../layouts/PageShell";
 import { useCurrentUser } from "../../../hooks/useCurrentUser";
-import { useIsMobile } from "../../../hooks/useIsMobile";
 import { userCan } from "../../../utils/permissions";
 import { useProviders, type ProviderRow } from "./useProviders";
 import {
@@ -46,8 +46,9 @@ import styles from "./index.module.less";
 import { MediaGenerationSettingsPanel } from "../MediaGeneration";
 import { VoiceSettingsPanel } from "../Voice";
 import { SearchSettingsPanel } from "../SearchConfig";
+import { DecisionSettingsPanel } from "./components/DecisionSettingsPanel";
 
-type ModelCategory = "chat" | "generation" | "voice" | "search";
+type ModelCategory = "chat" | "generation" | "voice" | "search" | "decision";
 
 function resolveModelCategory(
   requestedTab: string | null,
@@ -57,6 +58,7 @@ function resolveModelCategory(
   canSearch: boolean,
 ): ModelCategory {
   if (requestedTab === "generation" && canProviders) return "generation";
+  if (requestedTab === "decision" && canProviders) return "decision";
   if (requestedTab === "voice" && canVoice) return "voice";
   if (requestedTab === "search" && canSearch) return "search";
   if ((requestedTab === "chat" || requestedTab === null) && canChat) {
@@ -73,7 +75,6 @@ const { Title } = Typography;
 
 export default function ModelsPage() {
   const { t } = useTranslation();
-  const isMobile = useIsMobile();
   const user = useCurrentUser();
   const canProviders = userCan(user, "providers");
   const canOllama = userCan(user, "ollama_models");
@@ -104,7 +105,12 @@ export default function ModelsPage() {
   );
   const setModelCategory = (next: string) => {
     const updated = new URLSearchParams(searchParams);
-    if (next === "generation" || next === "voice" || next === "search") {
+    if (
+      next === "generation" ||
+      next === "voice" ||
+      next === "search" ||
+      next === "decision"
+    ) {
       updated.set("tab", next);
     } else updated.delete("tab");
     setSearchParams(updated, { replace: true });
@@ -241,7 +247,7 @@ export default function ModelsPage() {
   return (
     <PageShell
       title={t("pageShell.models.title")}
-      subtitle={isMobile ? undefined : t("pageShell.models.subtitle")}
+      subtitle={t("pageShell.models.subtitle")}
       actions={
         modelCategory === "chat" ? (
           <Space>
@@ -298,6 +304,19 @@ export default function ModelsPage() {
                 },
               ]
             : []),
+          ...(canProviders
+            ? [
+                {
+                  key: "decision",
+                  label: (
+                    <Space className={styles.modelTabLabel} size={6}>
+                      <Scale size={15} />
+                      {t("models.decisionModelsTab")}
+                    </Space>
+                  ),
+                },
+              ]
+            : []),
           ...(canSearch
             ? [
                 {
@@ -319,6 +338,17 @@ export default function ModelsPage() {
         <VoiceSettingsPanel />
       ) : modelCategory === "search" ? (
         <SearchSettingsPanel />
+      ) : modelCategory === "decision" ? (
+        <DecisionSettingsPanel
+          openRouterKey={
+            providers.find(
+              (provider) =>
+                provider.api_key &&
+                (provider.name === "openrouter" ||
+                  (provider.base_url ?? "").includes("openrouter.ai")),
+            )?.api_key
+          }
+        />
       ) : loading ? (
         <LoadingState message={t("models.loadingProviders")} />
       ) : error ? (

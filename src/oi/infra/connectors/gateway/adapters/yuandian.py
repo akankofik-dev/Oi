@@ -13,17 +13,17 @@ BASE_URL = "https://open.chineselaw.com/open"
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_laws",
-        "description": "Pencarian semantik peraturan hukum dan pasal",
+        "description": "语义检索法律法规与法条",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Pertanyaan hukum bahasa natural atau kata kunci pencarian",
+                    "description": "自然语言法律问题或检索词",
                 },
                 "return_num": {
                     "type": "integer",
-                    "description": "Jumlah hasil, default 10",
+                    "description": "返回条数，默认 10",
                 },
             },
             "required": ["query"],
@@ -31,13 +31,13 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "search_cases",
-        "description": "Pencarian semantik putusan pengadilan dan kasus tipikal",
+        "description": "语义检索裁判案例与典型案例",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Deskripsi kasus bahasa natural atau kata kunci pencarian",
+                    "description": "自然语言案情或检索词",
                 },
             },
             "required": ["query"],
@@ -45,14 +45,14 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "search_enterprises",
-        "description": "Cari kandidat perusahaan berdasar nama (dapatkan ID perusahaan / kode kredit sosial terpadu)",
+        "description": "按企业名称检索企业候选（获取企业 ID / 统一社会信用代码）",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "Kata kunci nama perusahaan"},
+                "name": {"type": "string", "description": "企业名称关键词"},
                 "top_k": {
                     "type": "integer",
-                    "description": "Jumlah kandidat, default 10, maks 50",
+                    "description": "返回候选数量，默认 10，最大 50",
                 },
             },
             "required": ["name"],
@@ -60,17 +60,17 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "get_enterprise",
-        "description": "Cari daftar kandidat detail perusahaan berdasar nama perusahaan",
+        "description": "按企业名称查询企业详情候选列表",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Nama perusahaan, nama lama, atau singkatan saham",
+                    "description": "企业名称、曾用名或股票简称",
                 },
                 "num": {
                     "type": "integer",
-                    "description": "Jumlah hasil, default 2",
+                    "description": "返回数量，默认 2",
                 },
             },
             "required": ["name"],
@@ -78,13 +78,13 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "detect_hallucination",
-        "description": "Verifikasi apakah kutipan hukum dalam teks akurat (sekitar 15 detik, mohon tunggu)",
+        "description": "校验文本中的法律引用是否准确（约 15 秒，请耐心等待）",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "text": {
                     "type": "string",
-                    "description": "Teks asli yang akan diverifikasi (berisi referensi peraturan/nomor kasus)",
+                    "description": "待校验原文（含法规/案号引用）",
                 },
             },
             "required": ["text"],
@@ -170,9 +170,9 @@ def probe_credentials(creds: dict[str, Any]) -> None:
 def _api_key(creds: dict[str, Any]) -> str:
     api_key = str(creds.get("api_key") or creds.get("token") or "").strip()
     if not api_key:
-        raise ValueError("Isi API Key Yuandian")
+        raise ValueError("请填写元典 API Key")
     if not api_key.startswith("sk_"):
-        raise ValueError("API Key Yuandian harus diawali sk_, salin Key lengkap dari platform terbuka")
+        raise ValueError("元典 API Key 应以 sk_ 开头，请从开放平台复制完整 Key")
     return api_key
 
 
@@ -200,7 +200,7 @@ def _request(
             headers["Content-Type"] = "application/json; charset=utf-8"
             r = client.post(url, headers=headers, json=json_body or {})
         if r.status_code in (401, 403):
-            raise ValueError(f"API Key Yuandian tidak valid: HTTP {r.status_code}")
+            raise ValueError(f"元典 API Key 无效: HTTP {r.status_code}")
         r.raise_for_status()
         payload = r.json()
     if not isinstance(payload, dict):
@@ -208,14 +208,14 @@ def _request(
     if payload.get("success") is False:
         msg = str(payload.get("message") or payload.get("error_code") or "error")
         if "api" in msg.lower() and "key" in msg.lower():
-            raise ValueError(f"API Key Yuandian tidak valid: {msg}")
-        raise ValueError(f"Galat antarmuka Yuandian: {msg}")
+            raise ValueError(f"元典 API Key 无效: {msg}")
+        raise ValueError(f"元典接口错误: {msg}")
     code = payload.get("code")
     # OpenAPI success codes include 200 / 201; some endpoints omit code.
     if code is not None and code not in (0, 200, 201, "0", "200", "201"):
         msg = str(payload.get("message") or payload.get("msg") or code)
         low = msg.lower()
         if "api" in low and "key" in low:
-            raise ValueError(f"API Key Yuandian tidak valid: {msg}")
-        raise ValueError(f"Galat antarmuka Yuandian [{code}]: {msg}")
+            raise ValueError(f"元典 API Key 无效: {msg}")
+        raise ValueError(f"元典接口错误 [{code}]: {msg}")
     return json.dumps(payload, ensure_ascii=False, indent=2)

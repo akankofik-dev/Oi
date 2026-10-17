@@ -37,7 +37,7 @@ brew install tccli
 # 更新：brew upgrade tccli
 
 # 源码安装
-# git clone https://github.com/TencentCloud/tencentcloud-cli.git && cd tencentcloud-cli && python setup.py install
+# git clone https://github.com/akankofik-dev/tencentcloud-cli.git && cd tencentcloud-cli && python setup.py install
 ```
 
 验证安装：

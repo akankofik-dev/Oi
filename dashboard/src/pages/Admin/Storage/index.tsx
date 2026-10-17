@@ -12,7 +12,6 @@ import { HardDrive, LayoutGrid } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import PageShell from "../../../layouts/PageShell";
 import TabLabel from "../../../components/TabLabel";
-import { useIsMobile } from "../../../hooks/useIsMobile";
 import { OiEmptyMascot } from "../../../components/EmptyState";
 import StreamSetupGuide from "../../../components/StreamSetupGuide/StreamSetupGuide";
 import {
@@ -29,7 +28,6 @@ type TabKey = "my" | "types";
 
 export default function AdminStoragePage() {
   const { t } = useTranslation();
-  const isMobile = useIsMobile();
   const { backends, loading, error, fetchAll } = useStorageBackends();
 
   const [activeTab, setActiveTab] = useState<TabKey>("my");
@@ -162,7 +160,7 @@ export default function AdminStoragePage() {
   return (
     <PageShell.FillTabs
       title={t("storage.pageTitle")}
-      subtitle={isMobile ? undefined : t("storage.pageSubtitle")}
+      subtitle={t("storage.pageSubtitle")}
     >
       <Tabs
         activeKey={activeTab}

@@ -1,0 +1,72 @@
+#!/bin/bash
+#
+# Oi — 配置后回调（应用「设置」窗口提交后执行）
+#
+# 只处理管理员改密：两栏都空则保持不变；填了则更新 docker/.env、
+# data-share 引导文件、oi-login.txt 应急备份，容器在运行时
+# docker exec ... oi user passwd。日志与 API Key 请在 Web 控制台配置。
+#
+set -euo pipefail
+
+_OI_COMMON="$(dirname "$0")/common.sh"
+[ -f "$_OI_COMMON" ] || _OI_COMMON="/var/apps/oi/cmd/common.sh"
+[ -f "$_OI_COMMON" ] && source "$_OI_COMMON"
+
+ENV_FILE="${TRIM_APPDEST:-/var/apps/oi/target}/docker/.env"
+mkdir -p "$(dirname "$ENV_FILE")"
+
+# 挂飞牛 data-share（TRIM_DATA_SHARE_PATHS），与 compose 卷一致。
+DATA_DIR="$(oi_prepare_docker_persist "$ENV_FILE")"
+mkdir -p "$DATA_DIR"
+
+CONTAINER="oi"
+LOG="${TRIM_TEMP_LOGFILE:-/dev/null}"
+
+CUR_USER="$(oi_env_get "$ENV_FILE" OI_ADMIN_USERNAME)"
+CUR_PASS="$(oi_env_get "$ENV_FILE" OI_DEFAULT_PASSWORD)"
+CUR_DISPLAY="$(oi_env_get "$ENV_FILE" OI_ADMIN_DISPLAY_NAME)"
+CUR_EMAIL="$(oi_env_get "$ENV_FILE" OI_ADMIN_EMAIL)"
+[ -n "$CUR_USER" ] || CUR_USER="admin"
+
+WIZARD_PASSWORD="$(oi_sanitize_value "${wizard_admin_password:-}")"
+WIZARD_CONFIRM="$(oi_sanitize_value "${wizard_admin_password_confirm:-}")"
+
+fail_config() {
+    echo "[oi] $1" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+    echo "[oi] $1" >&2 || true
+    exit 1
+}
+
+if ! REASON="$(oi_validate_optional_password_change "$WIZARD_PASSWORD" "$WIZARD_CONFIRM" 2>&1)"; then
+    fail_config "$REASON"
+fi
+
+PASS_CHANGED=0
+if [ -n "$WIZARD_PASSWORD" ]; then
+    ADMIN_PASS="$WIZARD_PASSWORD"
+    PASS_CHANGED=1
+else
+    ADMIN_PASS="$CUR_PASS"
+fi
+
+if [ "$PASS_CHANGED" = "1" ]; then
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$CONTAINER" \
+        && docker exec "$CONTAINER" oi user passwd "$CUR_USER" --password "$ADMIN_PASS" > "$LOG" 2>&1; then
+        echo "[oi] 已通过官方 CLI 修改管理员密码" > "$LOG" 2>&1 || true
+    else
+        oi_mark_fnos_passwd_pending "$DATA_DIR"
+        echo "[oi] 提示：容器未运行或在线改密未成功，已记下待下次启动同步。" > "$LOG" 2>&1 || true
+    fi
+    oi_env_set "$ENV_FILE" OI_DEFAULT_PASSWORD "$ADMIN_PASS"
+    oi_persist_docker_env "$ENV_FILE"
+    oi_write_fnos_bootstrap "$DATA_DIR" "$CUR_USER" "$ADMIN_PASS" "$CUR_DISPLAY" "$CUR_EMAIL"
+    oi_distribute_docker_env "$ENV_FILE" "$DATA_DIR"
+    oi_write_login_file "$DATA_DIR" "$CUR_USER" "$ADMIN_PASS" 8088
+fi
+
+WIZARD_TEMPLATE="${TRIM_APPDEST:-/var/apps/oi/target}/wizard/config.template"
+WIZARD_DIR="$(dirname "${TRIM_APPDEST:-/var/apps/oi/target}")/wizard"
+[ -f "$WIZARD_TEMPLATE" ] || WIZARD_TEMPLATE="${TRIM_APPDEST:-/var/apps/oi/target}/../wizard/config"
+oi_render_config_wizard "$WIZARD_TEMPLATE" "$WIZARD_DIR" "$CUR_USER" "$ADMIN_PASS" "$DATA_DIR"
+
+exit 0

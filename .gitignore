@@ -31,7 +31,6 @@ __pycache__/
 wheels/
 *.whl
 pip-wheel-metadata/
-pip/cache/
 
 # Virtual environments
 .venv/
@@ -72,14 +71,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 dashboard/dist/
-# NOTE: dashboard src/oi/dashboard/ SENGAJA di-version (jangan di-ignore):
-# paket pip install dari source butuh file-file ini supaya dashboard jalan.
-# Dulu ada rule "src/oi/dashboard/**" yang bikin 103 asset ke-skip dari commit
-# dan dashboard jadi rusak (putih/loading) setelah pip install. Jangan kembalikan.
+src/oi/dashboard/**
+src/oi/dashboard/assets/*
+!src/oi/dashboard/__init__.py
+!src/oi/dashboard/.gitkeep
 
-# Ship Meituan pt-passport runtime; override global node_modules/ ignore.
-!src/oi/infra/agents/experts/library/meituan-living-assistant/skills/meituan-deals/scripts/node_modules/
-!src/oi/infra/agents/experts/library/meituan-living-assistant/skills/meituan-deals/scripts/node_modules/**
 
 # Local databases
 *.sqlite
@@ -115,7 +111,5 @@ fnos/native/app/site-packages/
 docs/superpowers/
 scripts/lh_image_install_oi_tencentos.sh
 .worktrees/
-
-# Local build of the oi-* forks; they are git-pinned now
-vendor/
-dashboard/node_modules/
+# Local conda environment
+.conda-oi/

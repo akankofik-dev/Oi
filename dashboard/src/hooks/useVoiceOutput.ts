@@ -224,7 +224,7 @@ export function useVoiceOutput() {
       const gen = playGenerationRef.current;
 
       if (!plain) {
-        antMessage.info(t("voice.nothingToRead", "Tidak ada prosa terbaca di pesan ini (blok kode dilewati)"));
+        antMessage.info(t("voice.nothingToRead", "没有可朗读的正文"));
         return;
       }
 

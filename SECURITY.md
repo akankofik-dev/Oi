@@ -1,0 +1,28 @@
+# Security Policy
+
+## Supported versions
+
+| Version | Supported |
+|---------|-----------|
+| latest release on `main` | ✅ |
+| older releases | best effort |
+
+## Reporting a vulnerability
+
+**Please do not open a public GitHub issue for security vulnerabilities.**
+
+- **GitHub Security Advisory:** [Create advisory](https://github.com/akankofik-dev/Oi/security/advisories/new)
+- **Email:** jubaoliang@gmail.com
+
+We aim to acknowledge reports within **3 business days** and provide a fix timeline within **7 business days** for confirmed issues.
+
+## Scope
+
+Oi is a self-hosted control plane. Operators are responsible for:
+
+- Securing the host and network exposure of `oi run`
+- Rotating JWT secrets and admin credentials
+- Reviewing tool guard rules under `~/.oi/security/tool_guard/`
+- Protecting LLM API keys and IM channel credentials
+
+See [docs/configuration.md](docs/configuration.md) for deployment hardening guidance.

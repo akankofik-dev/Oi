@@ -208,10 +208,10 @@ export default function SetupPage() {
   }
 
   const isModelStep = current === STEP_MODEL;
-  const currentLang = i18n.language?.startsWith("id") ? "id" : "en";
+  const currentLang = i18n.language?.startsWith("zh") ? "zh" : "en";
 
   const handleLanguageChange = (lang: string) => {
-    const locale: UiLocale = lang.startsWith("id") ? "id" : "en";
+    const locale: UiLocale = lang.startsWith("zh") ? "zh" : "en";
     storeUiLocale(locale);
     void ensureLocaleBundle(locale).then(() => i18n.changeLanguage(locale));
     const setupJwt = wizardSession.loadSetupJwt();
@@ -276,7 +276,7 @@ export default function SetupPage() {
               size="small"
               value={currentLang}
               options={[
-                { label: t("account.langId"), value: "id" },
+                { label: t("account.langZh"), value: "zh" },
                 { label: t("account.langEn"), value: "en" },
               ]}
               onChange={handleLanguageChange}

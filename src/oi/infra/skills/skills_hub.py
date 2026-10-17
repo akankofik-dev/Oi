@@ -976,8 +976,8 @@ def _github_read_file(entry: dict[str, Any]) -> str:
         try:
             normalized = content.replace("\n", "")
             return base64.b64decode(normalized).decode("utf-8")
-        except Exception as e:
-            logger.debug("decode base64 konten GitHub gagal: %s", e)
+        except Exception:
+            pass
 
     raise ValueError("Unable to read file content from GitHub entry")
 

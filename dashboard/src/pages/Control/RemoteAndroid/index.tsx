@@ -430,7 +430,7 @@ export default function RemoteAndroidPage({
         if (ok) {
           setInstallPhase("success");
           message.success(
-            t("remoteAndroid.installSuccess", "Container Android siap"),
+            t("remoteAndroid.installSuccess", "Android 容器已就绪"),
           );
           void refreshStatus();
           return;
@@ -440,7 +440,7 @@ export default function RemoteAndroidPage({
           setInstallLogs((prev) => [...prev, error]);
         }
         message.error(
-          t("remoteAndroid.installFailed", "Instal container gagal. Periksa log dan coba lagi."),
+          t("remoteAndroid.installFailed", "容器安装失败，请查看日志后重试"),
         );
       },
     );
@@ -952,13 +952,13 @@ export default function RemoteAndroidPage({
   const showTopBar = Boolean(ready || hasDevice || statusData);
 
   const aiToggleButton = (
-    <Tooltip title={t("remoteAndroid.ai.title", "Asisten AI")}>
+    <Tooltip title={t("remoteAndroid.ai.title", "AI 助手")}>
       <Button
         size="small"
         type={isAiPanelOpen ? "primary" : "default"}
         icon={<Bot size={14} />}
         onClick={handleAiPanelToggle}
-        aria-label={t("remoteAndroid.ai.title", "Asisten AI")}
+        aria-label={t("remoteAndroid.ai.title", "AI 助手")}
         className={styles.commandIconBtn}
       />
     </Tooltip>
@@ -971,7 +971,7 @@ export default function RemoteAndroidPage({
       onClick={handleShellPanelToggle}
       aria-pressed={isShellPanelOpen}
     >
-      {t("remoteAndroid.toggleShell", "Buka ADB Shell")}
+      {t("remoteAndroid.toggleShell", "打开 ADB 调试")}
     </Button>
   );
 
@@ -1014,23 +1014,23 @@ export default function RemoteAndroidPage({
         options={[
           {
             value: "low",
-            label: t("remoteAndroid.streamQualityLow", "Halus"),
+            label: t("remoteAndroid.streamQualityLow", "流畅"),
           },
           {
             value: "balanced",
-            label: t("remoteAndroid.streamQualityBalanced", "Seimbang"),
+            label: t("remoteAndroid.streamQualityBalanced", "均衡"),
           },
           {
             value: "high",
-            label: t("remoteAndroid.streamQualityHigh", "Tinggi"),
+            label: t("remoteAndroid.streamQualityHigh", "高清"),
           },
           {
             value: "max",
-            label: t("remoteAndroid.streamQualityMax", "Asli"),
+            label: t("remoteAndroid.streamQualityMax", "原画"),
           },
         ]}
         popupMatchSelectWidth={false}
-        aria-label={t("remoteAndroid.streamQuality", "Kualitas")}
+        aria-label={t("remoteAndroid.streamQuality", "画质")}
       />
     </div>
   );
@@ -1052,7 +1052,7 @@ export default function RemoteAndroidPage({
           loading={installPhase === "installing"}
           onClick={handleInstall}
         >
-          {t("remoteAndroid.install", "Instal container")}
+          {t("remoteAndroid.install", "安装容器")}
         </Button>
       ) : null}
       {!isMobile ? shellToggleButton : null}
@@ -1115,7 +1115,7 @@ export default function RemoteAndroidPage({
               icon={<Download size={14} />}
               onClick={handleInstall}
             >
-              {t("remoteAndroid.install", "Instal container")}
+              {t("remoteAndroid.install", "安装容器")}
             </Button>
           }
         />
@@ -1549,14 +1549,10 @@ export default function RemoteAndroidPage({
   return (
     <PageShell
       title={t("pageShell.mobile.title", "Remote Phone")}
-      subtitle={
-        isMobile
-          ? undefined
-          : t(
-              "pageShell.mobile.subtitle",
-              "View and control a connected phone or emulator",
-            )
-      }
+      subtitle={t(
+        "pageShell.mobile.subtitle",
+        "View and control a connected phone or emulator, and operate its screen remotely",
+      )}
       fill
       actions={actions}
     >

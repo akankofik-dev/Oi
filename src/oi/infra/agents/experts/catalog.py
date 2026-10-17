@@ -43,13 +43,13 @@ _FALLBACK_BUNDLED_AVATAR_IDS = frozenset(
     {
         "ai-coding-coach",
         "ai-safety-guardian",
+        "business-operations",
         "clinical-learning-subscription",
         "cvm-ai-doctor",
         "cvm-cluster-doctor",
         "default",
         "general-assistant",
         "karpathy-knowledge-base",
-        "meituan-living-assistant",
         "multi-agent-orchestrator",
         "news-trend",
         "office-automation",
@@ -312,35 +312,30 @@ def default_welcome_payload(catalog: ExpertCatalog | None = None) -> dict[str, A
         "welcome_message": {
             "zh": "说出你的想法，我来帮忙",
             "en": "Tell me what you need — I'll help",
-            "id": "Sampaikan kebutuhanmu — saya bantu",
         },
         "quick_prompts": [
             {
-                "title": {"zh": "总结内容", "en": "Summarize", "id": "Rangkum"},
+                "title": {"zh": "总结内容", "en": "Summarize"},
                 "description": {
                     "zh": "粘贴文字，提炼要点和结论",
                     "en": "Paste text and extract key points",
-                    "id": "Tempel teks, ekstrak poin penting dan kesimpulan",
                 },
                 "prompt": {
                     "zh": "请帮我总结以下内容，提炼核心要点：\n\n",
                     "en": "Please summarize the following and extract the key points:\n\n",
-                    "id": "Tolong rangkum konten berikut dan ekstrak poin-poin intinya:\n\n",
                 },
                 "color": "#e8f4ff",
                 "icon_name": "file-text",
             },
             {
-                "title": {"zh": "随便问问", "en": "Ask anything", "id": "Tanya apa saja"},
+                "title": {"zh": "随便问问", "en": "Ask anything"},
                 "description": {
                     "zh": "有任何问题都可以直接问我",
                     "en": "Ask me anything",
-                    "id": "Ada pertanyaan? Langsung tanyakan saja",
                 },
                 "prompt": {
                     "zh": "我有一个问题想请教你：",
                     "en": "I have a question for you:",
-                    "id": "Saya ada pertanyaan:",
                 },
                 "color": "#eef2ff",
                 "icon_name": "message-square",

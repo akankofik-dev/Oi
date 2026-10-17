@@ -4,7 +4,6 @@ import { Monitor, Smartphone } from "lucide-react";
 import PageShell from "../../../layouts/PageShell";
 import { usePathTabs } from "../../../hooks/usePathTabs";
 import { useCurrentUser } from "../../../hooks/useCurrentUser";
-import { useIsMobile } from "../../../hooks/useIsMobile";
 import { useServerCapabilities } from "../../../hooks/useServerCapabilities";
 import { userCan } from "../../../utils/permissions";
 import DesktopPanel from "./DesktopPanel";
@@ -25,7 +24,6 @@ const TAB_ICONS = {
 
 export default function RemoteDesktopPage() {
   const { t } = useTranslation();
-  const isMobile = useIsMobile();
   const user = useCurrentUser();
   const { mobileEnabled } = useServerCapabilities();
 
@@ -76,7 +74,7 @@ export default function RemoteDesktopPage() {
   return (
     <PageShell
       title={pageTitle}
-      subtitle={isMobile ? undefined : t("remoteDesktopHub.description")}
+      subtitle={t("remoteDesktopHub.description")}
       fill
       pathTabs={pathTabs}
     >
