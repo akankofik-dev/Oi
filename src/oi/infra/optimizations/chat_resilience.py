@@ -533,6 +533,63 @@ def get_token_bucket(
 # ---------------------------------------------------------------------------
 
 
+DEFAULT_FAILOVER_MAX_MODELS = 3
+
+
+def resolve_failover_max_models(explicit: int | None = None) -> int:
+    """Resolve total models to try per turn: explicit > env > default.
+
+    ``explicit`` (when positive) wins. A non-positive or unparseable
+    ``OI_FAILOVER_MAX_MODELS`` env value falls back to the default with a
+    warning, never crashing the chat path on a bad config value.
+    """
+    if explicit is not None:
+        try:
+            explicit_value = int(explicit)
+        except (TypeError, ValueError):
+            explicit_value = 0
+        if explicit_value > 0:
+            return explicit_value
+        logger.warning(
+            "resolve_failover_max_models: ignoring non-positive explicit "
+            "max_models %r, falling through to env/default",
+            explicit,
+        )
+    raw_env = os.getenv("OI_FAILOVER_MAX_MODELS")
+    if raw_env is not None:
+        try:
+            env_value = int(raw_env.strip())
+        except (TypeError, ValueError):
+            env_value = 0
+        if env_value > 0:
+            return env_value
+        logger.warning(
+            "resolve_failover_max_models: ignoring invalid "
+            "OI_FAILOVER_MAX_MODELS %r, falling back to default %d",
+            raw_env,
+            DEFAULT_FAILOVER_MAX_MODELS,
+        )
+    return DEFAULT_FAILOVER_MAX_MODELS
+
+
+def _same_model_ref(a: str | None, b: str | None) -> bool:
+    """True when two model identifiers refer to the same model.
+
+    Compares the full ``"provider/model"`` ref (case-insensitive) and,
+    so a bare model id still matches its ref, the model-id part after
+    the last ``"/"``.
+    """
+    if a is None or b is None:
+        return a is b
+    norm_a = str(a).strip().lower()
+    norm_b = str(b).strip().lower()
+    if not norm_a or not norm_b:
+        return False
+    if norm_a == norm_b:
+        return True
+    return norm_a.rsplit("/", 1)[-1] == norm_b.rsplit("/", 1)[-1]
+
+
 async def resilient_stream(
     stream_factory: Callable[[], AsyncIterator[dict[str, Any]]],
     *,
@@ -547,6 +604,9 @@ async def resilient_stream(
     token_bucket: TokenBucketRateLimiter | None = None,
     rpm: float | None = None,
     token_bucket_max_wait: float = 120.0,
+    fallback_models: Sequence[str] | None = None,
+    max_models: int | None = None,
+    failover_status: dict[str, Any] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Yield chunks from ``stream_factory()``, retrying pre-first-chunk failures.
 
@@ -559,98 +619,204 @@ async def resilient_stream(
 
     Before the first call — and before every retry attempt — a token is
     taken from the per-model token bucket (``token_bucket`` when given,
-    else :func:`get_token_bucket` for ``model`` with ``rpm``). When the
+    else :func:`get_token_bucket` for the current model with ``rpm``). When the
     bucket is empty the caller *waits* for a refill (yielding a
     ``rate_limit_waiting`` status chunk when the wait is noticeable)
     instead of sending the request, so our own bursts never cause 429.
     If the wait exceeds ``token_bucket_max_wait`` the call proceeds
     anyway and the retry/backoff below handles any 429 that results
     (e.g. from other clients sharing the same API key).
+
+    Failover (429 only): when a model's retry attempts are exhausted on a
+    rate-limit error and ``fallback_models`` names other configured models,
+    the turn automatically switches to the next model — ``request["model"]``
+    is updated and a ``model_failover`` status chunk (``from_model`` /
+    ``to_model``) is yielded, so the switch is never silent. The fallback
+    gets the SAME ``request`` (same ``messages``/history, unchanged), so
+    conversation context and meaning are preserved; only the ``model``
+    key changes. Up to ``max_models`` total models are tried per turn
+    (``max_models`` param > ``OI_FAILOVER_MAX_MODELS`` env > default 3).
+    Non-rate-limit errors (auth, invalid model, context-length, ...) never
+    trigger failover. If every tried model fails with 429, the FIRST
+    model's 429 is re-raised. ``failover_status`` (when given) is filled
+    with ``model_used`` / ``failover_from`` / ``failovers`` /
+    ``tried_models`` so callers can report which model actually served.
     """
     attempts = max(1, int(max_attempts))
-    active_limiter = limiter if limiter is not None else get_rate_limiter(model)
-    active_bucket = (
-        token_bucket if token_bucket is not None else get_token_bucket(model, rpm=rpm)
-    )
-    for attempt in range(attempts):
-        # Token bucket FIRST (rate gate) so a caller never holds a
-        # concurrency slot while waiting for a refill. Runs before the
-        # first call and before every retry attempt.
-        acquired, waited = await active_bucket.acquire(max_wait=token_bucket_max_wait)
-        if waited > 0.5:
-            yield {
-                "type": "status",
-                "status": "rate_limit_waiting",
-                "wait_seconds": round(waited, 2),
-            }
-        if not acquired:
-            logger.warning(
-                "resilient_stream: token bucket wait exceeded %.0fs; "
-                "proceeding anyway (retry will handle 429)",
-                token_bucket_max_wait,
-            )
-        yielded_any = False
-        try:
-            async with active_limiter:
-                stream = stream_factory()
-                async for chunk in stream:
-                    yielded_any = True
-                    yield chunk
-            return
-        except BaseException as exc:  # noqa: BLE001 — classify, then re-raise
-            if yielded_any:
-                # Content already delivered: restarting would duplicate it.
-                raise
-            last_attempt = attempt >= attempts - 1
-            if is_context_length_error(exc) and not last_attempt:
-                if request is not None and isinstance(request.get("messages"), list):
-                    from oi.infra.optimizations.context_compressor import (  # noqa: PLC0415
-                        compress_for_retry,
-                    )
+    max_models_resolved = max(1, resolve_failover_max_models(max_models))
+    # Model queue: primary first, then fallbacks (deduplicated against the
+    # primary and each other), capped at max_models total.
+    queue: list[str | None] = []
 
-                    try:
-                        request["messages"] = compress_for_retry(
-                            request["messages"],
-                            model=model,
-                            attempt=attempt,
+    def _push(m: str | None) -> None:
+        if m is None:
+            if None not in queue:
+                queue.append(None)
+            return
+        text = str(m).strip()
+        if not text:
+            return
+        for existing in queue:
+            if existing is not None and _same_model_ref(existing, text):
+                return
+        queue.append(text)
+
+    _push(model)
+    for fallback in fallback_models or []:
+        _push(fallback)
+    queue = queue[:max_models_resolved]
+    # Without a mutable request dict the factory cannot pick up a model
+    # switch, so failover is impossible: try the primary only.
+    if not isinstance(request, dict):
+        queue = queue[:1]
+    status_out: dict[str, Any] = {
+        "model_used": None,
+        "failover_from": [],
+        "failovers": 0,
+        "tried_models": [],
+    }
+    first_rate_limit_error: BaseException | None = None
+    try:
+        for model_index, current_model in enumerate(queue):
+            status_out["tried_models"].append(current_model)
+            # Explicit limiter/bucket (caller-supplied) stay as given;
+            # auto-created ones are per-model so a fallback gets its own
+            # concurrency slot and token bucket.
+            active_limiter = (
+                limiter if limiter is not None else get_rate_limiter(current_model)
+            )
+            active_bucket = (
+                token_bucket
+                if token_bucket is not None
+                else get_token_bucket(current_model, rpm=rpm)
+            )
+            switched = False
+            for attempt in range(attempts):
+                # Token bucket FIRST (rate gate) so a caller never holds a
+                # concurrency slot while waiting for a refill. Runs before the
+                # first call and before every retry attempt.
+                acquired, waited = await active_bucket.acquire(
+                    max_wait=token_bucket_max_wait
+                )
+                if waited > 0.5:
+                    yield {
+                        "type": "status",
+                        "status": "rate_limit_waiting",
+                        "wait_seconds": round(waited, 2),
+                    }
+                if not acquired:
+                    logger.warning(
+                        "resilient_stream: token bucket wait exceeded %.0fs; "
+                        "proceeding anyway (retry will handle 429)",
+                        token_bucket_max_wait,
+                    )
+                yielded_any = False
+                try:
+                    async with active_limiter:
+                        stream = stream_factory()
+                        async for chunk in stream:
+                            yielded_any = True
+                            if status_out["model_used"] is None:
+                                status_out["model_used"] = current_model
+                            yield chunk
+                    return
+                except BaseException as exc:  # noqa: BLE001 — classify, then re-raise
+                    if yielded_any:
+                        # Content already delivered: restarting would duplicate it.
+                        raise
+                    last_attempt = attempt >= attempts - 1
+                    if is_context_length_error(exc) and not last_attempt:
+                        if request is not None and isinstance(
+                            request.get("messages"), list
+                        ):
+                            from oi.infra.optimizations.context_compressor import (  # noqa: PLC0415
+                                compress_for_retry,
+                            )
+
+                            try:
+                                request["messages"] = compress_for_retry(
+                                    request["messages"],
+                                    model=current_model,
+                                    attempt=attempt,
+                                )
+                            except Exception:
+                                logger.exception(
+                                    "resilient_stream: recompress failed"
+                                )
+                        logger.warning(
+                            "resilient_stream: context-length error, retrying with "
+                            "compressed context (attempt %d/%d)",
+                            attempt + 1,
+                            attempts,
                         )
-                    except Exception:
-                        logger.exception("resilient_stream: recompress failed")
-                logger.warning(
-                    "resilient_stream: context-length error, retrying with "
-                    "compressed context (attempt %d/%d)",
-                    attempt + 1,
-                    attempts,
-                )
-                yield {
-                    "type": "status",
-                    "status": "context_compressed_retrying",
-                    "attempt": attempt + 1,
-                }
+                        yield {
+                            "type": "status",
+                            "status": "context_compressed_retrying",
+                            "attempt": attempt + 1,
+                        }
+                        continue
+                    if is_rate_limit_error(exc):
+                        if first_rate_limit_error is None:
+                            first_rate_limit_error = exc
+                        if not last_attempt:
+                            wait = parse_retry_after(
+                                exc,
+                                default=retry_delay_seconds(
+                                    attempt, base=base_delay, cap=max_delay
+                                ),
+                                cap=retry_after_cap,
+                            )
+                            logger.warning(
+                                "resilient_stream: rate-limited, retrying in %.1fs "
+                                "(attempt %d/%d)",
+                                wait,
+                                attempt + 1,
+                                attempts,
+                            )
+                            yield {
+                                "type": "status",
+                                "status": "rate_limited_retrying",
+                                "attempt": attempt + 1,
+                                "wait_seconds": round(wait, 2),
+                            }
+                            if wait > 0:
+                                await sleep(wait)
+                            continue
+                        # Retries exhausted for this model. Fail over to the
+                        # next model on 429 only — never on other errors.
+                        if model_index + 1 < len(queue):
+                            next_model = queue[model_index + 1]
+                            status_out["failover_from"].append(current_model)
+                            status_out["failovers"] = len(
+                                status_out["failover_from"]
+                            )
+                            logger.warning(
+                                "resilient_stream: model %r rate-limited after "
+                                "%d attempts; failing over to %r",
+                                current_model,
+                                attempts,
+                                next_model,
+                            )
+                            yield {
+                                "type": "status",
+                                "status": "model_failover",
+                                "from_model": current_model,
+                                "to_model": next_model,
+                                "reason": "rate_limited",
+                            }
+                            if request is not None:
+                                request["model"] = next_model
+                            switched = True
+                        break
+                    raise
+            if switched:
                 continue
-            if is_rate_limit_error(exc) and not last_attempt:
-                wait = parse_retry_after(
-                    exc,
-                    default=retry_delay_seconds(attempt, base=base_delay, cap=max_delay),
-                    cap=retry_after_cap,
-                )
-                logger.warning(
-                    "resilient_stream: rate-limited, retrying in %.1fs "
-                    "(attempt %d/%d)",
-                    wait,
-                    attempt + 1,
-                    attempts,
-                )
-                yield {
-                    "type": "status",
-                    "status": "rate_limited_retrying",
-                    "attempt": attempt + 1,
-                    "wait_seconds": round(wait, 2),
-                }
-                if wait > 0:
-                    await sleep(wait)
-                continue
-            raise
+            break
+        if first_rate_limit_error is not None:
+            raise first_rate_limit_error
+    finally:
+        if failover_status is not None:
+            failover_status.update(status_out)
 
 
 __all__ = [
@@ -664,6 +830,7 @@ __all__ = [
     "parse_retry_after",
     "register_model_rpm",
     "resilient_stream",
+    "resolve_failover_max_models",
     "resolve_model_rpm",
     "retry_delay_seconds",
 ]

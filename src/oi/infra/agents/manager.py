@@ -599,6 +599,42 @@ class AgentManager:
     def providers(self) -> ProviderStore:
         return self._providers
 
+    def usable_model_refs(self) -> list[str]:
+        """Ordered ``"provider/model"`` refs usable for chat (failover list).
+
+        Same source the harness failover helpers use: every chat-eligible
+        model of every usable provider row. Fail-open: any provider-store
+        error yields an empty list, never an exception.
+        """
+        from oi.infra.agents.providers.model_flags import (  # noqa: PLC0415
+            is_chat_eligible_model,
+        )
+
+        refs: list[str] = []
+        try:
+            rows = self._providers.iter_usable_rows()
+        except Exception:
+            return refs
+        for prow in rows:
+            try:
+                models = prow.get_models()
+            except Exception:
+                continue
+            for m in models:
+                try:
+                    if not is_chat_eligible_model(
+                        m,
+                        provider_name=prow.name,
+                        provider_api_key=prow.api_key,
+                    ):
+                        continue
+                except Exception:
+                    continue
+                model_id = str(m.get("id") or "").strip()
+                if model_id:
+                    refs.append(f"{prow.name}/{model_id}")
+        return refs
+
     @property
     def security(self) -> SecuritySettingsStore:
         return self._security
@@ -3302,34 +3338,7 @@ class AgentManager:
         # shared harness factory (same cache the router uses, so identity
         # matching works and no duplicate HTTP clients are created).
         def _usable_model_refs() -> list[str]:
-            from oi.infra.agents.providers.model_flags import (  # noqa: PLC0415
-                is_chat_eligible_model,
-            )
-
-            refs: list[str] = []
-            try:
-                rows = self._providers.iter_usable_rows()
-            except Exception:
-                return refs
-            for prow in rows:
-                try:
-                    models = prow.get_models()
-                except Exception:
-                    continue
-                for m in models:
-                    try:
-                        if not is_chat_eligible_model(
-                            m,
-                            provider_name=prow.name,
-                            provider_api_key=prow.api_key,
-                        ):
-                            continue
-                    except Exception:
-                        continue
-                    model_id = str(m.get("id") or "").strip()
-                    if model_id:
-                        refs.append(f"{prow.name}/{model_id}")
-            return refs
+            return self.usable_model_refs()
 
         def _build_chat_model(ref: str) -> Any:
             harness_manager = self._harness_manager

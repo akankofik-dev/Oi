@@ -1267,14 +1267,24 @@ class GlobalProcessor:
             # the first chunk are retried (backoff honouring Retry-After,
             # context recompressed on each retry). Once chunks flow, errors
             # propagate as before — a partial turn is never restarted.
+            # On 429 after retries, the turn automatically fails over to
+            # the next configured model with the SAME request/history.
             from oi.infra.optimizations.chat_resilience import (  # noqa: PLC0415
                 resilient_stream,
             )
 
+            _failover_status: dict[str, Any] = {}
+            _fallback_models: list[str] | None = None
+            try:
+                _fallback_models = self._agent_manager.usable_model_refs()
+            except Exception:
+                _fallback_models = None
             _stream = resilient_stream(
                 lambda: self._agent_manager.stream(agent_id, request),
                 request=request,
                 model=request.get("model") if isinstance(request, dict) else None,
+                fallback_models=_fallback_models,
+                failover_status=_failover_status,
             )
             async for chunk in _stream:
                 usage_tracker.observe(chunk)
@@ -1343,6 +1353,14 @@ class GlobalProcessor:
                 )
                 yield _maybe_stamp_team_host(chunk, agent_id, team_host)
             stream_ok = True
+            if _failover_status.get("failovers"):
+                logger.warning(
+                    "chat failover: turn served by %r after %r rate-limited "
+                    "(tried=%s)",
+                    _failover_status.get("model_used"),
+                    _failover_status.get("failover_from"),
+                    _failover_status.get("tried_models"),
+                )
         except Exception as exc:
             await self._record_stream_error(user_id=user_id, agent_id=agent_id, exc=exc)
             message, error_code = _stream_error(exc, locale)

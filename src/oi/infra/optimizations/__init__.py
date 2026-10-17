@@ -35,6 +35,7 @@ from oi.infra.optimizations.chat_resilience import (
     parse_retry_after,
     register_model_rpm,
     resilient_stream,
+    resolve_failover_max_models,
     resolve_model_rpm,
     retry_delay_seconds,
 )
@@ -105,6 +106,7 @@ __all__ = [
     "register_model_rpm",
     "register_model_window",
     "resolve_context_window",
+    "resolve_failover_max_models",
     "resolve_model_rpm",
     "resilient_stream",
     "reset_manager",
