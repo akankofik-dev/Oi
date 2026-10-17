@@ -16,6 +16,13 @@ behaviours:
   and the stream is retried.
 * **Throttling** — :class:`RateLimiter` bounds concurrent LLM calls per
   model key (burst guard) so a burst of turns cannot hammer one model.
+  :class:`TokenBucketRateLimiter` additionally bounds the *rate* (requests
+  per minute) per model key: before every model call a token is taken,
+  and when the bucket is empty the caller *waits* for a refill instead of
+  sending the request. The concurrency guard alone cannot stop bursts
+  from getting 429s; the token bucket prevents our own bursts. Retries
+  still handle 429s caused by *other* clients sharing the same API key,
+  which no local bucket can prevent.
 
 Safety rule: a retry only ever happens when **zero** chunks were yielded
 by the failed attempt. Once the first chunk has been delivered (and
@@ -31,7 +38,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
+import threading
 import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -296,6 +305,230 @@ def get_rate_limiter(model_key: str | None, **kwargs: Any) -> RateLimiter:
 
 
 # ---------------------------------------------------------------------------
+# Throttling: per-model token bucket (requests-per-minute)
+# ---------------------------------------------------------------------------
+#
+# The semaphore-based RateLimiter above only bounds *concurrency* (how
+# many calls are in flight at once). It does NOT bound the *rate*: a burst
+# of short calls can still exceed the provider's requests-per-minute
+# quota and get 429. This token bucket is the permanent fix for that:
+# before every model call a token is taken; when the bucket is empty the
+# caller waits for a refill instead of sending the request.
+#
+# Thread-safety: token state is guarded by a ``threading.Lock`` held only
+# for the microsecond refill/check/consume critical section (never across
+# an ``await``), so it is safe from both async and sync callers. The
+# async ``acquire`` sleeps with ``asyncio.sleep`` (never blocks the event
+# loop); ``acquire_sync`` uses ``time.sleep`` and is for sync callers only.
+
+DEFAULT_MODEL_RPM = 30.0
+_MODEL_RPM_OVERRIDES: dict[str, float] = {}
+
+
+def register_model_rpm(model: str, rpm: float) -> None:
+    """Register an explicit requests-per-minute limit for ``model``.
+
+    Registered overrides win over the ``OI_RATE_LIMIT_RPM`` env var and
+    the default. Raises ``ValueError`` for non-positive ``rpm``.
+    """
+    rpm_value = float(rpm)
+    if rpm_value <= 0:
+        raise ValueError("rpm must be > 0")
+    _MODEL_RPM_OVERRIDES[(model or "").strip().lower()] = rpm_value
+
+
+def resolve_model_rpm(model: str | None, explicit: float | None = None) -> float:
+    """Resolve the RPM for ``model``: explicit > override > env > default.
+
+    ``explicit`` (when positive) wins. A non-positive or unparseable env
+    value falls back to the default with a warning, never crashing the
+    chat path on a bad config value.
+    """
+    if explicit is not None:
+        try:
+            explicit_value = float(explicit)
+        except (TypeError, ValueError):
+            explicit_value = 0.0
+        if explicit_value > 0:
+            return explicit_value
+        logger.warning(
+            "resolve_model_rpm: ignoring non-positive explicit rpm %r, "
+            "falling through to override/env/default",
+            explicit,
+        )
+    key = (model or "").strip().lower()
+    override = _MODEL_RPM_OVERRIDES.get(key)
+    if override is not None and override > 0:
+        return override
+    raw_env = os.getenv("OI_RATE_LIMIT_RPM")
+    if raw_env is not None:
+        try:
+            env_value = float(raw_env.strip())
+        except (TypeError, ValueError):
+            env_value = 0.0
+        if env_value > 0:
+            return env_value
+        logger.warning(
+            "resolve_model_rpm: ignoring invalid OI_RATE_LIMIT_RPM %r, "
+            "falling back to default %.0f",
+            raw_env,
+            DEFAULT_MODEL_RPM,
+        )
+    return DEFAULT_MODEL_RPM
+
+
+class TokenBucketRateLimiter:
+    """Per-model token bucket: at most ``rpm`` requests per minute.
+
+    The bucket starts full (``burst`` tokens), so the first ``burst``
+    calls go through immediately; afterwards tokens refill smoothly at
+    ``rpm / 60`` per second and a caller that finds the bucket empty
+    waits for the next refill instead of sending the request. Burst
+    capacity defaults to ``max(1, rpm // 6)`` (5 for the 30 RPM default),
+    which lets a small burst through but spreads a 40-tool-call turn over
+    ~a minute instead of hammering the provider at once.
+
+    ``acquire`` never deadlocks: if no token becomes available within
+    ``max_wait`` seconds it returns ``(False, waited)`` and the caller
+    proceeds anyway (the retry/backoff in :func:`resilient_stream` then
+    handles any 429 that results).
+    """
+
+    def __init__(
+        self,
+        *,
+        rpm: float = DEFAULT_MODEL_RPM,
+        burst: int | None = None,
+        max_wait: float = 120.0,
+    ) -> None:
+        rpm_value = float(rpm)
+        if rpm_value <= 0:
+            raise ValueError("rpm must be > 0")
+        self._rpm = rpm_value
+        self._refill_rate = rpm_value / 60.0
+        self._burst = max(1, int(rpm_value // 6)) if burst is None else max(1, int(burst))
+        self._tokens = float(self._burst)
+        self._last_refill = time.monotonic()
+        self._lock = threading.Lock()
+        self._max_wait = max(0.0, float(max_wait))
+
+    @property
+    def rpm(self) -> float:
+        return self._rpm
+
+    @property
+    def burst(self) -> int:
+        return self._burst
+
+    def _refill_locked(self, now: float) -> None:
+        """Top the bucket up for elapsed time. Caller must hold ``_lock``."""
+        elapsed = now - self._last_refill
+        if elapsed > 0:
+            self._tokens = min(
+                float(self._burst),
+                self._tokens + elapsed * self._refill_rate,
+            )
+            self._last_refill = now
+
+    def try_acquire(self) -> bool:
+        """Take a token if one is available right now (sync, non-blocking)."""
+        with self._lock:
+            self._refill_locked(time.monotonic())
+            if self._tokens >= 1.0:
+                self._tokens -= 1.0
+                return True
+            return False
+
+    async def acquire(self, max_wait: float | None = None) -> tuple[bool, float]:
+        """Wait for a token; return ``(acquired, seconds_waited)``.
+
+        ``acquired`` is False only when ``max_wait`` elapsed without a
+        token; the caller should then proceed anyway and let retry
+        handle any 429. Never blocks the event loop (sleeps with
+        ``asyncio.sleep``); never deadlocks (bounded by ``max_wait``).
+        """
+        budget = self._max_wait if max_wait is None else max(0.0, float(max_wait))
+        waited = 0.0
+        deadline = time.monotonic() + budget
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                self._refill_locked(now)
+                if self._tokens >= 1.0:
+                    self._tokens -= 1.0
+                    return True, waited
+                wait_needed = (1.0 - self._tokens) / self._refill_rate
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False, waited
+            sleep_for = min(wait_needed, remaining)
+            await asyncio.sleep(sleep_for)
+            waited += sleep_for
+
+    def acquire_sync(self, max_wait: float | None = None) -> tuple[bool, float]:
+        """Blocking sync version of :meth:`acquire` (sync callers only).
+
+        Do NOT call from async code — it uses ``time.sleep`` and would
+        block the event loop. Async callers must use :meth:`acquire`.
+        """
+        budget = self._max_wait if max_wait is None else max(0.0, float(max_wait))
+        waited = 0.0
+        deadline = time.monotonic() + budget
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                self._refill_locked(now)
+                if self._tokens >= 1.0:
+                    self._tokens -= 1.0
+                    return True, waited
+                wait_needed = (1.0 - self._tokens) / self._refill_rate
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False, waited
+            sleep_for = min(wait_needed, remaining)
+            time.sleep(sleep_for)
+            waited += sleep_for
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return (
+            f"TokenBucketRateLimiter(rpm={self._rpm}, burst={self._burst}, "
+            f"tokens={self._tokens:.2f})"
+        )
+
+
+_TOKEN_BUCKETS: dict[str, TokenBucketRateLimiter] = {}
+_TOKEN_BUCKETS_MAX_KEYS = 64
+
+
+def get_token_bucket(
+    model_key: str | None,
+    *,
+    rpm: float | None = None,
+    burst: int | None = None,
+    max_wait: float | None = None,
+) -> TokenBucketRateLimiter:
+    """Process-wide per-model token bucket (bounded registry).
+
+    ``rpm`` (when given) resolves via :func:`resolve_model_rpm` — an
+    explicit value wins over registered overrides and the env var.
+    """
+    key = (model_key or "default").strip().lower() or "default"
+    bucket = _TOKEN_BUCKETS.get(key)
+    if bucket is None:
+        if len(_TOKEN_BUCKETS) >= _TOKEN_BUCKETS_MAX_KEYS:
+            # Evict the oldest bucket so the registry itself cannot grow
+            # without bound when model names are attacker-controlled.
+            _TOKEN_BUCKETS.pop(next(iter(_TOKEN_BUCKETS)))
+        bucket = TokenBucketRateLimiter(
+            rpm=resolve_model_rpm(model_key, explicit=rpm),
+            burst=burst,
+            max_wait=120.0 if max_wait is None else max_wait,
+        )
+        _TOKEN_BUCKETS[key] = bucket
+    return bucket
+
+
+# ---------------------------------------------------------------------------
 # Resilient stream: retry-before-first-chunk only
 # ---------------------------------------------------------------------------
 
@@ -311,6 +544,9 @@ async def resilient_stream(
     retry_after_cap: float = 60.0,
     limiter: RateLimiter | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    token_bucket: TokenBucketRateLimiter | None = None,
+    rpm: float | None = None,
+    token_bucket_max_wait: float = 120.0,
 ) -> AsyncIterator[dict[str, Any]]:
     """Yield chunks from ``stream_factory()``, retrying pre-first-chunk failures.
 
@@ -320,10 +556,39 @@ async def resilient_stream(
     ``"messages"`` are recompressed more aggressively before the next
     attempt, so a long conversation keeps working instead of erroring out.
     Rate-limit retries honour ``Retry-After`` and yield a status chunk first.
+
+    Before the first call — and before every retry attempt — a token is
+    taken from the per-model token bucket (``token_bucket`` when given,
+    else :func:`get_token_bucket` for ``model`` with ``rpm``). When the
+    bucket is empty the caller *waits* for a refill (yielding a
+    ``rate_limit_waiting`` status chunk when the wait is noticeable)
+    instead of sending the request, so our own bursts never cause 429.
+    If the wait exceeds ``token_bucket_max_wait`` the call proceeds
+    anyway and the retry/backoff below handles any 429 that results
+    (e.g. from other clients sharing the same API key).
     """
     attempts = max(1, int(max_attempts))
     active_limiter = limiter if limiter is not None else get_rate_limiter(model)
+    active_bucket = (
+        token_bucket if token_bucket is not None else get_token_bucket(model, rpm=rpm)
+    )
     for attempt in range(attempts):
+        # Token bucket FIRST (rate gate) so a caller never holds a
+        # concurrency slot while waiting for a refill. Runs before the
+        # first call and before every retry attempt.
+        acquired, waited = await active_bucket.acquire(max_wait=token_bucket_max_wait)
+        if waited > 0.5:
+            yield {
+                "type": "status",
+                "status": "rate_limit_waiting",
+                "wait_seconds": round(waited, 2),
+            }
+        if not acquired:
+            logger.warning(
+                "resilient_stream: token bucket wait exceeded %.0fs; "
+                "proceeding anyway (retry will handle 429)",
+                token_bucket_max_wait,
+            )
         yielded_any = False
         try:
             async with active_limiter:
@@ -391,10 +656,14 @@ async def resilient_stream(
 __all__ = [
     "BoundedCache",
     "RateLimiter",
+    "TokenBucketRateLimiter",
     "get_rate_limiter",
+    "get_token_bucket",
     "is_context_length_error",
     "is_rate_limit_error",
     "parse_retry_after",
+    "register_model_rpm",
     "resilient_stream",
+    "resolve_model_rpm",
     "retry_delay_seconds",
 ]
