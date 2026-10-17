@@ -33,6 +33,9 @@ class BackupManifest:
     includes_plugins: bool = False
     includes_knowledge: bool = False
     includes_chats: bool = True
+    # True when config.json / env inside the archive are Fernet-encrypted
+    # (``config.json.enc`` / ``env.enc``). Restore needs the same OI_SECRET_KEY.
+    secrets_encrypted: bool = False
 
     def to_json(self) -> str:
         payload: dict[str, Any] = {
@@ -50,6 +53,7 @@ class BackupManifest:
             "includes_plugins": self.includes_plugins,
             "includes_knowledge": self.includes_knowledge,
             "includes_chats": self.includes_chats,
+            "secrets_encrypted": self.secrets_encrypted,
             "agents": [asdict(a) for a in self.agents],
         }
         return json.dumps(payload, indent=2, ensure_ascii=False)
@@ -89,6 +93,8 @@ class BackupManifest:
             ),
             # Legacy archives dumped the full database; missing key means chats are present.
             includes_chats=bool(data["includes_chats"]) if "includes_chats" in data else True,
+            # Archives predating secret encryption store config/env plaintext.
+            secrets_encrypted=bool(data.get("secrets_encrypted", False)),
         )
 
     @classmethod

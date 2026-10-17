@@ -366,6 +366,16 @@ class OiServer:
 
         db = open_database(config, self.paths)
         run_migrations(db)
+        # Secrets at rest: resolve the encryption key (fail loudly if none is
+        # available) and migrate any plaintext provider keys to ciphertext
+        # (one-time, idempotent) before the chat path can serve.
+        from oi.infra.security.secrets_crypto import (  # noqa: PLC0415
+            migrate_all_provider_keys,
+            require_secret_crypto,
+        )
+
+        require_secret_crypto()
+        migrate_all_provider_keys(db)
         self.services = build_shared_services(db=db, paths=self.paths, config=config)
         from oi.infra.auth.captcha import boot_from_services  # noqa: PLC0415
 
@@ -393,6 +403,14 @@ class OiServer:
         except Exception:
             db.close()
             raise
+        # Secrets at rest: same startup key check + migration as start().
+        from oi.infra.security.secrets_crypto import (  # noqa: PLC0415
+            migrate_all_provider_keys,
+            require_secret_crypto,
+        )
+
+        require_secret_crypto()
+        migrate_all_provider_keys(db)
         self.services = build_shared_services(db=db, paths=self.paths, config=config)
         from oi.infra.auth.captcha import boot_from_services  # noqa: PLC0415
 
