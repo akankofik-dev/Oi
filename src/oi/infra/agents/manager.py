@@ -131,6 +131,31 @@ _AGENT_STATES_NEEDING_MODEL_RELOAD = frozenset({"failed", "created"})
 
 _HARNESS_AGENT_CONFIG_FIELDS = frozenset(item.name for item in fields(HarnessAgentConfig))
 
+# Global instruction: every chat model must think/reason in Indonesian.
+# Prepended to the system prompt in _build_harness_config (the single place
+# HarnessAgentConfig is built), so it applies to ALL models and ALL agents
+# without touching any stored prompt. The dashboard has no system-prompt
+# field, so this code default is the only way to set it globally.
+INDONESIAN_THINKING_INSTRUCTION = (
+    "Selalu berpikir dan bernalar dalam Bahasa Indonesia. "
+    "Semua proses berpikir internal (thinking/reasoning) harus dalam "
+    "Bahasa Indonesia, meskipun pengguna menulis dalam bahasa lain. "
+    "Jawaban akhir dalam Bahasa Indonesia (atau ikuti bahasa pengguna)."
+)
+
+
+def _with_indonesian_thinking(system_prompt: str | None) -> str | None:
+    """Prepend the Indonesian-thinking instruction (idempotent).
+
+    ``None``/empty is left untouched: ``None`` means "let the harness use
+    its own prompt" (workspace bootstrap flow), which must not be replaced.
+    """
+    if not system_prompt or not system_prompt.strip():
+        return system_prompt
+    if INDONESIAN_THINKING_INSTRUCTION in system_prompt:
+        return system_prompt
+    return f"{INDONESIAN_THINKING_INSTRUCTION}\n\n{system_prompt}"
+
 
 def _memory_namespace(agent_id: str) -> str:
     return f"{_MEMORY_NS_PREFIX}{agent_id}"
@@ -3527,6 +3552,7 @@ class AgentManager:
         return replace(
             applied,
             tool_guard_rules_dir=str(self._tool_guard_rules.rules_dir),
+            system_prompt=_with_indonesian_thinking(applied.system_prompt),
         )
 
     def _install_team_host_dispatch(self) -> None:
