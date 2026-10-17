@@ -345,9 +345,7 @@ async def test_auto_route_caps_models_at_three(monkeypatch) -> None:
     health = ModelHealthRegistry(clock=lambda: 100.0)
     middleware = SafeModelFailoverMiddleware(
         health=health,
-        candidates=lambda _current, _vision: [
-            AutoRouteCandidate(ref, 100_000) for ref in refs[1:]
-        ],
+        candidates=lambda _current, _vision: [AutoRouteCandidate(ref, 100_000) for ref in refs[1:]],
         model_for_ref=models.__getitem__,
         max_retries=0,
         initial_delay=0,

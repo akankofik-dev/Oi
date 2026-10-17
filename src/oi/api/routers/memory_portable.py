@@ -107,9 +107,7 @@ async def list_portable_sources(
         sources = list_sources()
         return JSONResponse(content={"sources": [s.to_dict() for s in sources]})
     except ImportError:
-        raise OiError(
-            ErrorCode.INTERNAL_ERROR, "oi-memory 未安装，无法使用记忆迁移功能"
-        ) from None
+        raise OiError(ErrorCode.INTERNAL_ERROR, "oi-memory 未安装，无法使用记忆迁移功能") from None
     except Exception as exc:
         logger.exception("list_portable_sources failed")
         raise OiError(ErrorCode.INTERNAL_ERROR, str(exc)) from exc

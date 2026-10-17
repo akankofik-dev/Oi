@@ -598,8 +598,7 @@ class StepList:
     def __init__(self, title="", steps=()):
         self.title = title
         self._steps = [
-            {"label": label, "state": "pending", "elapsed": 0.0, "detail": ""}
-            for label in steps
+            {"label": label, "state": "pending", "elapsed": 0.0, "detail": ""} for label in steps
         ]
         self._animated = _stderr_is_tty()
         self._started = False
@@ -631,9 +630,7 @@ class StepList:
         if not self._started:
             return
         self._stop_animation()
-        total = (
-            time.monotonic() - self._total_start if self._total_start else 0.0
-        )
+        total = time.monotonic() - self._total_start if self._total_start else 0.0
         text = done_text or f"Done in {total:.1f}s"
         if self._animated:
             click.echo("", err=True)
@@ -663,14 +660,10 @@ class StepList:
         """Return the index of *label*, appending a pending step if new."""
         index = self._index_of(label)
         if index is None:
-            self._steps.append(
-                {"label": label, "state": "pending", "elapsed": 0.0, "detail": ""}
-            )
+            self._steps.append({"label": label, "state": "pending", "elapsed": 0.0, "detail": ""})
             index = len(self._steps) - 1
             if self._animated and self._started:
-                sys.stderr.write(
-                    self._render_line(self._steps[index]) + "\n"
-                )
+                sys.stderr.write(self._render_line(self._steps[index]) + "\n")
                 sys.stderr.flush()
         return index
 
@@ -729,9 +722,7 @@ class StepList:
         self._anim_index = index
         self._frame = 0
         self._anim_stop.clear()
-        self._anim_thread = threading.Thread(
-            target=self._animate_loop, daemon=True
-        )
+        self._anim_thread = threading.Thread(target=self._animate_loop, daemon=True)
         self._anim_thread.start()
 
     def _stop_animation(self):
@@ -760,9 +751,7 @@ class StepList:
                 if step["state"] != "active":
                     break
                 self._frame = (self._frame + 1) % len(frames)
-                self._draw_line_at(
-                    index, self._render_active_line(step, frames[self._frame])
-                )
+                self._draw_line_at(index, self._render_active_line(step, frames[self._frame]))
 
     def _plain_done_line(self, step):
         mark = CHECK if step["state"] == "done" else CROSS
@@ -790,9 +779,7 @@ class StepList:
         step = self._steps[index]
         started = step.pop("_start", None)
         step["state"] = "done"
-        step["elapsed"] = (
-            time.monotonic() - started if started else 0.0
-        )
+        step["elapsed"] = time.monotonic() - started if started else 0.0
         step["detail"] = detail
         if self._animated:
             self._redraw(index)
@@ -807,9 +794,7 @@ class StepList:
         step = self._steps[index]
         started = step.pop("_start", None)
         step["state"] = "failed"
-        step["elapsed"] = (
-            time.monotonic() - started if started else 0.0
-        )
+        step["elapsed"] = time.monotonic() - started if started else 0.0
         step["detail"] = detail
         if self._animated:
             self._redraw(index)
@@ -823,9 +808,7 @@ class StepList:
             if step["state"] == "active":
                 step["state"] = "failed"
                 started = step.pop("_start", None)
-                step["elapsed"] = (
-                    time.monotonic() - started if started else 0.0
-                )
+                step["elapsed"] = time.monotonic() - started if started else 0.0
                 if self._animated:
                     self._redraw(self._steps.index(step))
                 else:

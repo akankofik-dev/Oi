@@ -270,9 +270,7 @@ oi_write_login_file "{tmp_path}" alice WizardPass1 8088
 def test_oi_distribute_docker_env_copies_to_compose_dirs(tmp_path: Path) -> None:
     src = tmp_path / "target" / "docker" / ".env"
     src.parent.mkdir(parents=True)
-    src.write_text(
-        "OI_DEFAULT_PASSWORD=Abcdefg1\nTRIM_DATA_SHARE_PATHS=/data\n", encoding="utf-8"
-    )
+    src.write_text("OI_DEFAULT_PASSWORD=Abcdefg1\nTRIM_DATA_SHARE_PATHS=/data\n", encoding="utf-8")
     runtime = tmp_path / "appcenter" / "oi" / "docker"
     runtime.mkdir(parents=True)
     (runtime / "docker-compose.yaml").write_text(

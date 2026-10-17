@@ -348,9 +348,7 @@ async def admin_create_voice_provider(
 ) -> dict[str, Any]:
     repo = server.services.voice_provider_repo
     if repo.get_by_name(body.name):
-        raise OiError(
-            ErrorCode.PROVIDER_NAME_TAKEN, f"voice provider {body.name!r} already exists"
-        )
+        raise OiError(ErrorCode.PROVIDER_NAME_TAKEN, f"voice provider {body.name!r} already exists")
     pid = repo.create(
         name=body.name,
         kind=body.kind,

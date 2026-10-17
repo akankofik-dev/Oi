@@ -74,9 +74,7 @@ def init(
             if not non_interactive:
                 from oi.cli.support import prompts as _prompts
 
-                if not _prompts.confirm(
-                    f"Wipe {home}? This deletes ALL Oi state.", default=False
-                ):
+                if not _prompts.confirm(f"Wipe {home}? This deletes ALL Oi state.", default=False):
                     click.echo("aborted", err=True)
                     raise SystemExit(1)
             shutil.rmtree(home)

@@ -199,9 +199,7 @@ async def test_restart_desktop_process_checkpoints_sqlite_wal(
     monkeypatch.setattr(
         update_router,
         "sys",
-        type(
-            "sys", (), {"executable": "/bin/python", "argv": ["oi", "run"], "orig_argv": None}
-        )(),
+        type("sys", (), {"executable": "/bin/python", "argv": ["oi", "run"], "orig_argv": None})(),
     )
     monkeypatch.setattr(update_router.time, "sleep", lambda _s: None)
 
@@ -250,9 +248,7 @@ async def test_restart_desktop_process_swallows_checkpoint_errors(
     monkeypatch.setattr(
         update_router,
         "sys",
-        type(
-            "sys", (), {"executable": "/bin/python", "argv": ["oi", "run"], "orig_argv": None}
-        )(),
+        type("sys", (), {"executable": "/bin/python", "argv": ["oi", "run"], "orig_argv": None})(),
     )
     monkeypatch.setattr(update_router.time, "sleep", lambda _s: None)
 

@@ -256,9 +256,7 @@ async def import_workspace_zip(
     pairs = [(rel, blob) for rel, blob in entries if not is_oi_builtin_skills_path(rel)]
     skipped = len(entries) - len(pairs)
     if skipped:
-        warnings.append(
-            f"skipped {skipped} {OI_BUILTIN_SKILLS_ROOT!r} entry/entries (owned by Oi)"
-        )
+        warnings.append(f"skipped {skipped} {OI_BUILTIN_SKILLS_ROOT!r} entry/entries (owned by Oi)")
     if pairs:
         await workspace.aupload_many(pairs)
 

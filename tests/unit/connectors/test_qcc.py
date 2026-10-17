@@ -44,9 +44,7 @@ async def test_qcc_credentials_build_and_probe(monkeypatch: pytest.MonkeyPatch) 
     assert creds["access_token"] == "test-qcc-token"
     assert creds["internal_token"]
     creds["internal_token"] = "local-gateway-token"
-    spec = build_http_mcp_spec(
-        entry=entry, instance_id="qcc-test", creds=creds, config=OiConfig()
-    )
+    spec = build_http_mcp_spec(entry=entry, instance_id="qcc-test", creds=creds, config=OiConfig())
     assert spec["transport"] == "http"
     assert "/api/internal/mcp/qcc/qcc-test?token=local-gateway-token" in spec["url"]
     assert "test-qcc-token" not in str(spec)

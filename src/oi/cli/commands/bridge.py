@@ -102,8 +102,7 @@ def _echo_handshake_note(*, connect: bool) -> None:
     if json_output_enabled() or not connect:
         return
     click.echo(
-        "Peer handshake verified; CLI closed the session. "
-        "Start `oi run` to keep the bridge linked."
+        "Peer handshake verified; CLI closed the session. Start `oi run` to keep the bridge linked."
     )
 
 

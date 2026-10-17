@@ -51,9 +51,7 @@ class VoiceManager:
     def _validate_provider_name(self, name: str, *, capability: str) -> None:
         if is_builtin_preset(name):
             if name == "edge" and capability == "stt":
-                raise OiError(
-                    ErrorCode.VOICE_CAPABILITY_MISMATCH, "Edge TTS does not support STT"
-                )
+                raise OiError(ErrorCode.VOICE_CAPABILITY_MISMATCH, "Edge TTS does not support STT")
             if name == "browser":
                 return
             return
@@ -61,9 +59,7 @@ class VoiceManager:
         if row is None:
             raise OiError(ErrorCode.NOT_FOUND, f"voice provider {name!r} not found")
         if not row.enabled:
-            raise OiError(
-                ErrorCode.VOICE_PROVIDER_DISABLED, f"voice provider {name!r} is disabled"
-            )
+            raise OiError(ErrorCode.VOICE_PROVIDER_DISABLED, f"voice provider {name!r} is disabled")
         cap = row.capability
         if cap != "both" and cap != capability:
             raise OiError(
@@ -78,9 +74,7 @@ class VoiceManager:
         if row is None:
             raise OiError(ErrorCode.NOT_FOUND, f"voice provider {name!r} not found")
         if not row.enabled:
-            raise OiError(
-                ErrorCode.VOICE_PROVIDER_DISABLED, f"voice provider {name!r} is disabled"
-            )
+            raise OiError(ErrorCode.VOICE_PROVIDER_DISABLED, f"voice provider {name!r} is disabled")
         return ResolvedVoiceProvider(name=row.name, kind=row.kind, row=row)
 
     def media_type(self, provider_name: str | None) -> str:

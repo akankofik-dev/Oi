@@ -50,7 +50,7 @@ _FALLBACK_BUNDLED_AVATAR_IDS = frozenset(
         "default",
         "general-assistant",
         "karpathy-knowledge-base",
-            "multi-agent-orchestrator",
+        "multi-agent-orchestrator",
         "news-trend",
         "office-automation",
         "ops-engineer",

@@ -47,9 +47,7 @@ async def test_inspect_then_maintain_preserves_history_and_never_sweeps_host(sto
     def forbidden(*args, **kwargs):
         pytest.fail("current-expert maintenance must never sweep the host")
 
-    monkeypatch.setattr(
-        "oi.infra.agents.memory.thread_cleanup.sweep_deleted_residuals", forbidden
-    )
+    monkeypatch.setattr("oi.infra.agents.memory.thread_cleanup.sweep_deleted_residuals", forbidden)
     first = coordinator.start_current("a", 1)
     assert first["busy"] and first["job"]["phase"] == "waiting"
     with pytest.raises(ValueError):

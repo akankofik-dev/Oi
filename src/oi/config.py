@@ -477,9 +477,7 @@ def load_config(path: Path) -> OiConfig:
         merged["login_lockout_seconds"] = _coerce_int(
             "OI_LOGIN_LOCKOUT_SECONDS", v, merged.get("login_lockout_seconds", 900)
         )
-    if (v := os.environ.get("OI_DEFAULT_TIMEZONE")) or (
-        v := os.environ.get("OI_CRON_TIMEZONE")
-    ):
+    if (v := os.environ.get("OI_DEFAULT_TIMEZONE")) or (v := os.environ.get("OI_CRON_TIMEZONE")):
         merged["default_timezone"] = v
     if v := os.environ.get("OI_CORS_ORIGINS"):
         merged["cors_origins"] = [s.strip() for s in v.split(",") if s.strip()]
@@ -609,9 +607,7 @@ def load_config(path: Path) -> OiConfig:
         enable_api_docs=bool(merged["enable_api_docs"]),
         history_v2_enabled=_coerce_bool(
             "OI_HISTORY_V2_ENABLED",
-            os.environ.get(
-                "OI_HISTORY_V2_ENABLED", str(merged.get("history_v2_enabled", False))
-            ),
+            os.environ.get("OI_HISTORY_V2_ENABLED", str(merged.get("history_v2_enabled", False))),
             False,
         ),
         require_setup_password=bool(merged["require_setup_password"]),

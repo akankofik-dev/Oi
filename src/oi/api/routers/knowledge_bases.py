@@ -198,9 +198,7 @@ def _max_upload_bytes(server: OiServer) -> int:
     return MAX_DOCUMENT_BYTES
 
 
-def _map_knowledge_error(
-    exc: Exception, *, locale: str, server: OiServer | None = None
-) -> OiError:
+def _map_knowledge_error(exc: Exception, *, locale: str, server: OiServer | None = None) -> OiError:
     if isinstance(exc, OiError):
         return exc
     if isinstance(exc, (LookupError, FileNotFoundError)):
