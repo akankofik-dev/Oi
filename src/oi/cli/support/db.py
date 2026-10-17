@@ -58,17 +58,17 @@ def resolve_cli_user_id(
 
 
 def resolve_cli_locale() -> str:
-    """Best-effort locale for terminal rendering (id/en/zh)."""
+    """Best-effort locale for terminal rendering (zh/en)."""
     try:
         with open_cli_services() as svc:
             uid = resolve_cli_user_id(None, services=svc)
             if uid is not None:
                 row = svc.user_repo.get(uid)
-                if row is not None and row.locale in ("zh", "en", "id"):
+                if row is not None and row.locale in ("zh", "en"):
                     return row.locale
     except Exception:
         pass
-    return "id"
+    return "zh"
 
 
 def agent_row_to_dict(row: Any) -> dict[str, Any]:

@@ -250,7 +250,7 @@ function CronJobsPage() {
     return (
       <PageShell
         title={t("pageShell.tasks.title")}
-        subtitle={isMobile ? undefined : t("pageShell.tasks.subtitle")}
+        subtitle={t("pageShell.tasks.subtitle")}
         agentScoped
       >
         <Card>
@@ -271,7 +271,7 @@ function CronJobsPage() {
   return (
     <PageShell
       title={t("pageShell.tasks.title")}
-      subtitle={isMobile ? undefined : t("pageShell.tasks.subtitle")}
+      subtitle={t("pageShell.tasks.subtitle")}
       agentScoped
     >
       {activeAgent?.bridge ? (

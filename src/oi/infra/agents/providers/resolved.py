@@ -28,19 +28,6 @@ def list_resolved_models(providers: list[Any]) -> list[dict[str, Any]]:
             # Total context drives the UI ring; prompt and output caps remain
             # separately available for runtime budgeting and model settings.
             window = m.get("context_window") or m.get("max_input_tokens")
-            # Feed provider-reported windows into the chat compressor's
-            # override registry, so compression adapts to the model's real
-            # window (incl. custom / unknown models) instead of guessing
-            # from the model name.
-            if window:
-                try:
-                    from oi.infra.optimizations.context_compressor import (  # noqa: PLC0415
-                        register_model_window,
-                    )
-
-                    register_model_window(str(m["id"]), int(window))
-                except (TypeError, ValueError):
-                    pass
             max_input = m.get("max_input_tokens") or window
             max_output = m.get("max_output_tokens") or m.get("max_tokens")
             resolved.append(

@@ -256,6 +256,16 @@ export const routeConfigs: RouteConfig[] = [
     path: "/orca/admin/audit",
     element: <Navigate to="/admin/security?tab=audit" replace />,
   },
+  { path: "/oi/cron", element: <Navigate to="/tasks" replace /> },
+  { path: "/oi/channels", element: <Navigate to="/channels" replace /> },
+  {
+    path: "/oi/admin/users",
+    element: <Navigate to="/admin/users" replace />,
+  },
+  {
+    path: "/oi/admin/audit",
+    element: <Navigate to="/admin/security?tab=audit" replace />,
+  },
   {
     path: "/advanced-settings",
     element: <Navigate to="/admin/advanced" replace />,

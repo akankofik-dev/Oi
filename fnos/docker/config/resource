@@ -1,0 +1,17 @@
+{
+    "docker-project": {
+        "projects": [
+            {
+                "name": "oi",
+                "path": "docker"
+            }
+        ]
+    },
+    "data-share": {
+        "shares": [
+            {
+                "name": "oi/data"
+            }
+        ]
+    }
+}

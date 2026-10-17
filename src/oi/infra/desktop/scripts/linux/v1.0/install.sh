@@ -164,8 +164,8 @@ install_packages() {
             xfce4-panel xfce4-terminal xfce4-settings xfdesktop4 thunar mousepad \
             xfce4-appfinder \
             adwaita-icon-theme hicolor-icon-theme librsvg2-common \
-            fcitx5 fcitx5-frontend-gtk3 \
-            locales language-pack-id language-pack-id-base xclip xsel autocutsel xdg-utils libglib2.0-bin wget curl \
+            fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 \
+            fonts-wqy-zenhei locales xclip xsel autocutsel xdg-utils libglib2.0-bin wget curl \
             bubblewrap \
             || fail "apt install failed"
         # Adwaita ships SVG icons; without the gdk-pixbuf SVG loader they render as tiny stubs.
@@ -198,14 +198,15 @@ install_packages() {
 
 configure_locale_and_fonts() {
     if command -v localedef >/dev/null 2>&1; then
-        localedef -i id_ID -c -f UTF-8 -A /usr/share/locale/locale.alias id_ID.UTF-8 2>/dev/null || true
+        localedef -i zh_CN -c -f UTF-8 -A /usr/share/locale/locale.alias zh_CN.UTF-8 2>/dev/null || true
     fi
-    # Overwrite (bukan append): hapus entri locale lama agar tidak ganda
-    cat > /etc/default/locale << 'LOCALE_EOF'
-LANG=id_ID.UTF-8
-LC_ALL=id_ID.UTF-8
-LANGUAGE=id_ID:id
+    if [ -f /etc/default/locale ]; then
+        grep -q 'LANG=zh_CN.UTF-8' /etc/default/locale 2>/dev/null || cat >> /etc/default/locale << 'LOCALE_EOF'
+LANG=zh_CN.UTF-8
+LC_ALL=zh_CN.UTF-8
+LANGUAGE=zh_CN:zh
 LOCALE_EOF
+    fi
     fc-cache -f 2>/dev/null || true
 }
 
@@ -409,9 +410,9 @@ write_panel_files() {
 Version=1.0
 Type=Application
 Name=Applications
-Name[id]=Aplikasi
+Name[zh_CN]=应用程序
 Comment=Open the application finder
-Comment[id]=Buka menu aplikasi
+Comment[zh_CN]=打开应用程序菜单
 Exec=xfce4-appfinder
 Icon=${start_icon}
 Terminal=false
@@ -749,7 +750,7 @@ EOF
     cat > "$START_SESSION_SH" << SCRIPT_EOF
 #!/bin/bash
 export DISPLAY=${DISPLAY_NUM} HOME=/root
-export LANG=id_ID.UTF-8 LC_ALL=id_ID.UTF-8
+export LANG=zh_CN.UTF-8 LC_ALL=zh_CN.UTF-8
 export XDG_RUNTIME_DIR=/tmp/runtime-oi-desktop
 mkdir -p "\$XDG_RUNTIME_DIR"; chmod 700 "\$XDG_RUNTIME_DIR"
 for i in \$(seq 1 100); do xdpyinfo -display ${DISPLAY_NUM} >/dev/null 2>&1 && break; sleep 0.3; done
@@ -906,7 +907,7 @@ ICONS_EOF
 #!/bin/bash
 export DISPLAY=:99 HOME=/root XDG_RUNTIME_DIR=/tmp/runtime-oi-desktop
 export XDG_CONFIG_HOME=/root/.config XDG_DATA_HOME=/root/.local/share XDG_CURRENT_DESKTOP="XFCE"
-export LANG=id_ID.UTF-8 LC_ALL=id_ID.UTF-8 LANGUAGE=id_ID:id
+export LANG=zh_CN.UTF-8 LC_ALL=zh_CN.UTF-8 LANGUAGE=zh_CN:zh
 mkdir -p "$XDG_RUNTIME_DIR" "$HOME/Desktop"; chmod 700 "$XDG_RUNTIME_DIR"
 for i in $(seq 1 100); do xdpyinfo -display :99 >/dev/null 2>&1 && break; sleep 0.3; done
 for i in $(seq 1 50); do

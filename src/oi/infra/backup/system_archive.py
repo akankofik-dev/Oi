@@ -450,13 +450,15 @@ def restore_system_backup(
         extracted = Path(tmp) / "extracted"
         _extract_archive(source, extracted)
         manifest = _extract_manifest_from_dir(extracted)
-        # NOTE: history_v2 files in the archive are intentionally NOT restored
-        # here (restore never copied them; the target's own history is left
-        # untouched). Previously this raised SLASH_BAD_ARGS whenever EITHER
-        # side had history_v2, which blocked every restore of a backup taken
-        # from an instance with history v2 enabled — even when the target had
-        # no history at all and there was no conflict. Chat history still
-        # restores via the main DB + workspace conversation_history files.
+        if (
+            (paths.root / "history_v2.required").exists()
+            or (paths.root / "history_v2.sqlite").exists()
+            or (extracted / "history/history_v2.sqlite").exists()
+        ):
+            raise OiError(
+                ErrorCode.SLASH_BAD_ARGS,
+                "Versioned history requires a coordinated offline restore; no database was changed",
+            )
         is_migration = _is_migration_backup(manifest)
 
         # Resolve effective preserve_users flag before touching the DB.

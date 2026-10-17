@@ -83,6 +83,16 @@ export interface WeixinConfig extends BaseChannelConfig {
   accounts: WeixinAccountConfig[];
 }
 
+export interface OiBotConfig extends BaseChannelConfig {
+  api_key: string;
+  api_keys: string[];
+  api_base_url: string;
+  name: string;
+  dm_policy: "open" | "allowlist" | "disabled";
+  allow_from: string[];
+  system_prompt: string;
+}
+
 export interface ChannelConfig {
   discord: DiscordConfig;
   dingtalk: DingTalkConfig;
@@ -92,6 +102,7 @@ export interface ChannelConfig {
   dashboard: DashboardConfig;
   wecom: WeComConfig;
   weixin: WeixinConfig;
+  oibot: OiBotConfig;
 }
 
 export type SingleChannelConfig =
@@ -102,4 +113,5 @@ export type SingleChannelConfig =
   | YuanbaoConfig
   | DashboardConfig
   | WeComConfig
-  | WeixinConfig;
+  | WeixinConfig
+  | OiBotConfig;

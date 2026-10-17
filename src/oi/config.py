@@ -117,123 +117,6 @@ class MobileCapabilities:
 
 
 @dataclass(frozen=True)
-class AgentConnectionConfig:
-    """Per-agent connection settings persisted in config.json (``agent_connections``).
-
-    These defaults apply to every agent unless the agent's own config
-    overrides them. They control how the dashboard and IM surfaces reach
-    a running agent's harness runtime.
-    """
-
-    timeout_seconds: int = 120
-    reconnect_attempts: int = 3
-    reconnect_interval_seconds: int = 5
-    keepalive_seconds: int = 30
-    max_concurrent_sessions: int = 4
-    idle_disconnect_minutes: int = 60
-
-
-@dataclass(frozen=True)
-class ChatOptimizations:
-    """Feature flags for chat-pipeline optimizations (L1-L3 + auto-router).
-
-    Every flag defaults to OFF so a fresh or legacy config behaves exactly
-    like the unoptimized pipeline. Enable flags one at a time and restart.
-    ``auto_router_mode`` selects the router behaviour ("off"/"suggest"/"auto")
-    and only takes effect when ``auto_router`` is True.
-
-    Dormant flags (accepted but currently no-ops, kept as on-ramps):
-    ``zero_copy_stream`` — the stream_pipeline module is intentionally not
-    wired (see its docstring); the flag will gate it if a safe hook point
-    is found in the future.
-
-    Removed 2026-10-14 (multi-repo audit): ``agent_pooling`` and
-    ``predictive_prewarm`` were never wired to any code path. The pooling
-    they promised duplicates oi-harness's ChatModelFactory cache; the
-    useful remainder (pre-warming) is now ``provider_prewarm``.
-    """
-
-    batch_db_writes: bool = False
-    async_history: bool = False
-    smart_context_switch: bool = False
-    semantic_compress: bool = False
-    auto_router: bool = False
-    zero_copy_stream: bool = False
-    mmap_history: bool = False
-    provider_prewarm: bool = False
-    auto_router_mode: str = "suggest"
-
-
-_CHAT_FLAG_FIELDS = (
-    "batch_db_writes",
-    "async_history",
-    "smart_context_switch",
-    "semantic_compress",
-    "auto_router",
-    "zero_copy_stream",
-    "mmap_history",
-    "provider_prewarm",
-)
-
-
-def _parse_chat_section(raw: object) -> ChatOptimizations:
-    if raw is None:
-        return ChatOptimizations()
-    if not isinstance(raw, dict):
-        raise ValueError("config.chat must be an object")
-    defaults = ChatOptimizations()
-    flags: dict[str, Any] = {}
-    for name in _CHAT_FLAG_FIELDS:
-        flags[name] = bool(raw.get(name, getattr(defaults, name)))
-    mode = str(raw.get("auto_router_mode", defaults.auto_router_mode)).strip().lower()
-    if mode not in ("off", "suggest", "auto"):
-        raise ValueError(
-            f"config.chat.auto_router_mode must be off/suggest/auto, got {mode!r}"
-        )
-    flags["auto_router_mode"] = mode
-    return ChatOptimizations(**flags)
-
-
-def _parse_agent_connections_section(raw: object) -> AgentConnectionConfig:
-    if raw is None:
-        return AgentConnectionConfig()
-    if not isinstance(raw, dict):
-        raise ValueError("config.agent_connections must be an object")
-    defaults = AgentConnectionConfig()
-
-    def _int(key: str, default: int, minimum: int, maximum: int) -> int:
-        try:
-            value = int(raw.get(key, default))
-        except (TypeError, ValueError):
-            raise ValueError(f"config.agent_connections.{key} must be an integer") from None
-        if not minimum <= value <= maximum:
-            raise ValueError(
-                f"config.agent_connections.{key} must be {minimum}-{maximum}, got {value}"
-            )
-        return value
-
-    return AgentConnectionConfig(
-        timeout_seconds=_int("timeout_seconds", defaults.timeout_seconds, 1, 3600),
-        reconnect_attempts=_int(
-            "reconnect_attempts", defaults.reconnect_attempts, 0, 20
-        ),
-        reconnect_interval_seconds=_int(
-            "reconnect_interval_seconds",
-            defaults.reconnect_interval_seconds,
-            1,
-            300,
-        ),
-        keepalive_seconds=_int("keepalive_seconds", defaults.keepalive_seconds, 5, 600),
-        max_concurrent_sessions=_int(
-            "max_concurrent_sessions", defaults.max_concurrent_sessions, 1, 64
-        ),
-        idle_disconnect_minutes=_int(
-            "idle_disconnect_minutes", defaults.idle_disconnect_minutes, 0, 1440
-        ),
-    )
-
-
-@dataclass(frozen=True)
 class CapabilitiesConfig:
     mobile: MobileCapabilities = field(default_factory=MobileCapabilities)
 
@@ -258,8 +141,6 @@ class OiConfig:
     tls: TlsConfig = field(default_factory=TlsConfig)
     backup: BackupConfig = field(default_factory=BackupConfig)
     capabilities: CapabilitiesConfig = field(default_factory=CapabilitiesConfig)
-    agent_connections: AgentConnectionConfig = field(default_factory=AgentConnectionConfig)
-    chat: ChatOptimizations = field(default_factory=ChatOptimizations)
     max_upload_mb: int = DEFAULT_MAX_UPLOAD_MB
     browser_idle_timeout_minutes: int = DEFAULT_BROWSER_IDLE_TIMEOUT_MINUTES
 
@@ -715,37 +596,6 @@ def load_config(path: Path) -> OiConfig:
             include_chats=_coerce_bool("OI_BACKUP_INCLUDE_CHATS", v, backup.include_chats),
         )
 
-    chat = _parse_chat_section(raw.get("chat"))
-    if v := os.environ.get("OI_CHAT"):
-        # OI_CHAT is a JSON object with any of the config.chat keys; invalid
-        # JSON raises so misconfiguration is caught at boot, not at first use.
-        try:
-            env_raw = json.loads(v)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"OI_CHAT is not valid JSON: {exc.msg}") from exc
-        chat = _parse_chat_section(env_raw)
-
-    agent_connections = _parse_agent_connections_section(raw.get("agent_connections"))
-    if v := os.environ.get("OI_AGENT_CONNECTION"):
-        # OI_AGENT_CONNECTION is a JSON object with any of the
-        # agent_connections keys; invalid JSON or out-of-range values
-        # raise so misconfiguration is caught at boot, not at first use.
-        try:
-            env_raw = json.loads(v)
-        except json.JSONDecodeError as exc:
-            raise ValueError(
-                f"OI_AGENT_CONNECTION is not valid JSON: {exc.msg}"
-            ) from exc
-        env_parsed = _parse_agent_connections_section(env_raw)
-        agent_connections = AgentConnectionConfig(
-            timeout_seconds=env_parsed.timeout_seconds,
-            reconnect_attempts=env_parsed.reconnect_attempts,
-            reconnect_interval_seconds=env_parsed.reconnect_interval_seconds,
-            keepalive_seconds=env_parsed.keepalive_seconds,
-            max_concurrent_sessions=env_parsed.max_concurrent_sessions,
-            idle_disconnect_minutes=env_parsed.idle_disconnect_minutes,
-        )
-
     return OiConfig(
         bind_host=merged["bind_host"],
         port=int(merged["port"]),
@@ -770,8 +620,6 @@ def load_config(path: Path) -> OiConfig:
         tls=_parse_tls_section(raw.get("tls")),
         backup=backup,
         capabilities=capabilities,
-        agent_connections=agent_connections,
-        chat=chat,
         max_upload_mb=int(merged.get("max_upload_mb", DEFAULT_MAX_UPLOAD_MB)),
         browser_idle_timeout_minutes=max(
             0,

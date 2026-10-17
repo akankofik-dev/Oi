@@ -1,0 +1,78 @@
+#!/bin/bash
+#
+# Oi 本地版 — 重新配置回调（应用「设置」窗口提交后执行）
+#
+# 只处理管理员改密：两栏都空则保持不变；填了则更新 PKGVAR/.env、
+# oi-login.txt 应急备份，并对已初始化实例调用 oi user passwd。
+# 日志与 API Key 请在 Web 控制台配置。
+#
+set -euo pipefail
+
+_OI_COMMON="$(dirname "$0")/common.sh"
+[ -f "$_OI_COMMON" ] || _OI_COMMON="/var/apps/oi-native/cmd/common.sh"
+[ -f "$_OI_COMMON" ] && source "$_OI_COMMON"
+
+PKGVAR="${TRIM_PKGVAR:-/var/apps/oi-native/var}"
+APPDEST="${TRIM_APPDEST:-/var/apps/oi-native}"
+mkdir -p "$PKGVAR"
+ENV_FILE="$PKGVAR/.env"
+
+if [ -n "${TRIM_DATA_SHARE_PATHS:-}" ]; then
+    DATA_DIR="${TRIM_DATA_SHARE_PATHS%%:*}"
+else
+    DATA_DIR="${APPDEST}/shares/oi-native/data"
+fi
+mkdir -p "$DATA_DIR"
+
+CUR_USER="$(oi_env_get "$ENV_FILE" OI_ADMIN_USERNAME)"
+CUR_PASS="$(oi_env_get "$ENV_FILE" OI_DEFAULT_PASSWORD)"
+[ -n "$CUR_USER" ] || CUR_USER="admin"
+
+WIZARD_PASSWORD="$(oi_sanitize_value "${wizard_admin_password:-}")"
+WIZARD_CONFIRM="$(oi_sanitize_value "${wizard_admin_password_confirm:-}")"
+
+fail_config() {
+    echo "[oi-native] $1" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+    echo "[oi-native] $1" >&2 || true
+    exit 1
+}
+
+if ! REASON="$(oi_validate_optional_password_change "$WIZARD_PASSWORD" "$WIZARD_CONFIRM" 2>&1)"; then
+    fail_config "$REASON"
+fi
+
+PASS_CHANGED=0
+if [ -n "$WIZARD_PASSWORD" ]; then
+    ADMIN_PASS="$WIZARD_PASSWORD"
+    PASS_CHANGED=1
+else
+    ADMIN_PASS="$CUR_PASS"
+fi
+
+OI_HOME="${DATA_DIR}/.oi"
+MAIN="$APPDEST/cmd/main"
+if [ "$PASS_CHANGED" = "1" ] && [ -f "$OI_HOME/oi.db" ]; then
+    echo "[oi-native] 检测到已初始化实例，先停止服务再离线修改管理员密码 ..." > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+    [ -x "$MAIN" ] && "$MAIN" stop >/dev/null 2>&1 || true
+    if "$APPDEST/bin/oi-cli" user passwd "$CUR_USER" --password "$ADMIN_PASS" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1; then
+        echo "[oi-native] 已通过官方 CLI 修改管理员密码" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+    else
+        oi_mark_fnos_passwd_pending "$DATA_DIR"
+        echo "[oi-native] 警告：离线改密未成功，已记下待下次启动同步。" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+    fi
+    [ -x "$MAIN" ] && "$MAIN" start >/dev/null 2>&1 || true
+fi
+
+if [ "$PASS_CHANGED" = "1" ]; then
+    oi_env_set "$ENV_FILE" OI_DEFAULT_PASSWORD "$ADMIN_PASS"
+    echo "[oi-native] 已更新配置: $ENV_FILE" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>/dev/null || true
+    oi_write_login_file "$DATA_DIR" "$CUR_USER" "$ADMIN_PASS" 8089
+fi
+
+WIZARD_TEMPLATE="$APPDEST/wizard/config.template"
+WIZARD_DIR="$(dirname "$APPDEST")/wizard"
+[ -f "$WIZARD_TEMPLATE" ] || WIZARD_TEMPLATE="${APPDEST}/../wizard/config"
+oi_render_config_wizard "$WIZARD_TEMPLATE" "$WIZARD_DIR" "$CUR_USER" "$ADMIN_PASS" "$DATA_DIR"
+
+fix_ownership_and_perms "$PKGVAR" "$ENV_FILE"
+exit 0

@@ -3,7 +3,6 @@ import { Button, Empty, Space, Spin } from "antd";
 import { Plus, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import PageShell from "../../../layouts/PageShell";
-import { useIsMobile } from "../../../hooks/useIsMobile";
 import { request } from "../../../api/request";
 import type { ProviderRow } from "../../Settings/Models/useProviders";
 import { ProviderCard } from "../../Settings/Models/components/cards/ProviderCard";
@@ -11,7 +10,6 @@ import { CustomProviderModal } from "../../Settings/Models/components/modals/Cus
 
 export default function AdminSharedModelsPage() {
   const { t } = useTranslation();
-  const isMobile = useIsMobile();
   const [providers, setProviders] = useState<ProviderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +39,7 @@ export default function AdminSharedModelsPage() {
   return (
     <PageShell
       title={t("pageShell.adminSharedModels.title")}
-      subtitle={isMobile ? undefined : t("pageShell.adminSharedModels.subtitle")}
+      subtitle={t("pageShell.adminSharedModels.subtitle")}
       actions={
         <Space>
           <Button

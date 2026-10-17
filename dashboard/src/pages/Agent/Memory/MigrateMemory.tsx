@@ -141,7 +141,7 @@ export default function MigrateMemory({ agentId }: Props) {
     setError(null);
     try {
       await memoryPortableApi.packAndDownload(agentId);
-      message.success(t("memory.migrate.exportSuccess", "Paket memori diunduh"));
+      message.success(t("memory.migrate.exportSuccess", "记忆包已下载"));
       closeModal();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -153,7 +153,7 @@ export default function MigrateMemory({ agentId }: Props) {
   // ---- Import: dry-run first, then confirm execution ----
   const handleImport = async (actualDryRun: boolean) => {
     if (!importFile?.originFileObj) {
-      message.warning(t("memory.migrate.selectFile", "Pilih file .hmpkg terlebih dahulu"));
+      message.warning(t("memory.migrate.selectFile", "请先选择 .hmpkg 文件"));
       return;
     }
     setLoading(true);
@@ -172,7 +172,7 @@ export default function MigrateMemory({ agentId }: Props) {
       setAdoptResult(result);
       if (!actualDryRun) {
         message.success(
-          t("memory.migrate.importSuccess", "Impor selesai — menulis {{n}} entri", {
+          t("memory.migrate.importSuccess", "导入完成，共写入 {{n}} 条", {
             n: result.applied,
           }),
         );
@@ -206,19 +206,19 @@ export default function MigrateMemory({ agentId }: Props) {
     {
       key: "export",
       icon: <UploadIcon size={14} />,
-      label: t("memory.migrate.exportLabel", "Ekspor ke file"),
+      label: t("memory.migrate.exportLabel", "导出到文件"),
       onClick: () => openMode("export"),
     },
     {
       key: "import",
       icon: <Download size={14} />,
-      label: t("memory.migrate.importLabel", "Impor dari file"),
+      label: t("memory.migrate.importLabel", "从文件导入"),
       onClick: () => openMode("import"),
     },
     {
       key: "doctor",
       icon: <Stethoscope size={14} />,
-      label: t("memory.migrate.doctorLabel", "Validasi migrasi"),
+      label: t("memory.migrate.doctorLabel", "验证迁移"),
       onClick: () => openMode("doctor"),
     },
   ];
@@ -227,7 +227,7 @@ export default function MigrateMemory({ agentId }: Props) {
     <>
       <Dropdown menu={{ items: menuItems }} trigger={["click"]}>
         <Button size="small" icon={<CloudUpload size={14} />}>
-          {t("memory.migrate.buttonLabel", "Migrasi memori")} ▾
+          {t("memory.migrate.buttonLabel", "迁移记忆")} ▾
         </Button>
       </Dropdown>
 
@@ -237,13 +237,13 @@ export default function MigrateMemory({ agentId }: Props) {
         title={
           <Space>
             <CloudDownload size={14} />
-            {t("memory.migrate.exportTitle", "Ekspor memori ke file")}
+            {t("memory.migrate.exportTitle", "导出记忆到文件")}
           </Space>
         }
         onCancel={closeModal}
         footer={[
           <Button key="cancel" onClick={closeModal}>
-            {t("common.cancel", "Batal")}
+            {t("common.cancel", "取消")}
           </Button>,
           <Button
             key="export"
@@ -252,7 +252,7 @@ export default function MigrateMemory({ agentId }: Props) {
             loading={loading}
             onClick={handleExport}
           >
-            {t("memory.migrate.exportBtn", "Kemas & unduh")}
+            {t("memory.migrate.exportBtn", "打包并下载")}
           </Button>,
         ]}
       >
@@ -271,7 +271,7 @@ export default function MigrateMemory({ agentId }: Props) {
         title={
           <Space>
             <CloudUpload size={14} />
-            {t("memory.migrate.importTitle", "Impor memori dari file")}
+            {t("memory.migrate.importTitle", "从文件导入记忆")}
           </Space>
         }
         onCancel={closeModal}
@@ -280,13 +280,13 @@ export default function MigrateMemory({ agentId }: Props) {
           adoptResult && !adoptResult.dry_run
             ? [
                 <Button key="close" type="primary" onClick={closeModal}>
-                  {t("common.close", "Tutup")}
+                  {t("common.close", "关闭")}
                 </Button>,
               ]
             : adoptResult?.dry_run
             ? [
                 <Button key="cancel" onClick={closeModal}>
-                  {t("common.cancel", "Batal")}
+                  {t("common.cancel", "取消")}
                 </Button>,
                 <Button
                   key="confirm"
@@ -294,19 +294,19 @@ export default function MigrateMemory({ agentId }: Props) {
                   loading={loading}
                   onClick={() => handleImport(false)}
                 >
-                  {t("memory.migrate.confirmImport", "Konfirmasi & impor")}
+                  {t("memory.migrate.confirmImport", "确认执行")}
                 </Button>,
               ]
             : [
                 <Button key="cancel" onClick={closeModal}>
-                  {t("common.cancel", "Batal")}
+                  {t("common.cancel", "取消")}
                 </Button>,
                 <Button
                   key="preview"
                   loading={loading}
                   onClick={() => handleImport(true)}
                 >
-                  {t("memory.migrate.previewBtn", "Uji coba")}
+                  {t("memory.migrate.previewBtn", "预检（dry-run）")}
                 </Button>,
                 <Button
                   key="import"
@@ -314,7 +314,7 @@ export default function MigrateMemory({ agentId }: Props) {
                   loading={loading}
                   onClick={() => handleImport(false)}
                 >
-                  {t("memory.migrate.importBtn", "Impor langsung")}
+                  {t("memory.migrate.importBtn", "直接导入")}
                 </Button>,
               ]
         }
@@ -324,7 +324,7 @@ export default function MigrateMemory({ agentId }: Props) {
           {!adoptResult ? (
             <Form layout="vertical" style={{ marginTop: 8 }}>
               <Form.Item
-                label={t("memory.migrate.selectFileLabel", "Pilih file .hmpkg")}
+                label={t("memory.migrate.selectFileLabel", "选择 .hmpkg 文件")}
               >
                 <Upload
                   accept=".hmpkg"
@@ -336,13 +336,13 @@ export default function MigrateMemory({ agentId }: Props) {
                   }
                 >
                   <Button icon={<Download size={14} />}>
-                    {t("memory.migrate.chooseFile", "Pilih file")}
+                    {t("memory.migrate.chooseFile", "选择文件")}
                   </Button>
                 </Upload>
               </Form.Item>
 
               <Form.Item
-                label={t("memory.migrate.targetHostLabel", "Host target")}
+                label={t("memory.migrate.targetHostLabel", "目标宿主")}
               >
                 <Select
                   value={targetHost}
@@ -355,13 +355,13 @@ export default function MigrateMemory({ agentId }: Props) {
                 />
               </Form.Item>
 
-              <Form.Item label={t("memory.migrate.conflictLabel", "Kebijakan konflik")}>
+              <Form.Item label={t("memory.migrate.conflictLabel", "冲突策略")}>
                 <Radio.Group
                   value={onConflict}
                   onChange={(e) => setOnConflict(e.target.value)}
                 >
                   <Radio value="skip">
-                    {t("memory.migrate.conflictSkip", "Lewati (pertahankan yang ada)")}
+                    {t("memory.migrate.conflictSkip", "跳过（保留已有）")}
                   </Radio>
                   <Radio value="replace">
                     {t(
@@ -373,17 +373,17 @@ export default function MigrateMemory({ agentId }: Props) {
               </Form.Item>
 
               <Form.Item
-                label={t("memory.migrate.hostRewriteLabel", "Kolom host")}
+                label={t("memory.migrate.hostRewriteLabel", "host 字段")}
               >
                 <Radio.Group
                   value={hostRewrite}
                   onChange={(e) => setHostRewrite(e.target.value)}
                 >
                   <Radio value="keep">
-                    {t("memory.migrate.hostRewriteKeep", "Pertahankan host asli")}
+                    {t("memory.migrate.hostRewriteKeep", "保留原始 host")}
                   </Radio>
                   <Radio value="target">
-                    {t("memory.migrate.hostRewriteTarget", "Tulis ulang ke host target")}
+                    {t("memory.migrate.hostRewriteTarget", "改写为目标宿主")}
                   </Radio>
                 </Radio.Group>
               </Form.Item>
@@ -396,16 +396,16 @@ export default function MigrateMemory({ agentId }: Props) {
               <Alert
                 type="info"
                 showIcon
-                message={t("memory.migrate.dryRunResult", "Hasil uji coba")}
+                message={t("memory.migrate.dryRunResult", "预检结果")}
                 description={
                   <div>
                     <div>
-                      {t("memory.migrate.willApply", "Akan menulis: {{n}} entri", {
+                      {t("memory.migrate.willApply", "预计写入：{{n}} 条", {
                         n: adoptResult.applied,
                       })}
                     </div>
                     <div>
-                      {t("memory.migrate.targetNs", "Namespace target: {{ns}}", {
+                      {t("memory.migrate.targetNs", "目标 namespace：{{ns}}", {
                         ns: adoptResult.target_namespace,
                       })}
                     </div>
@@ -428,8 +428,8 @@ export default function MigrateMemory({ agentId }: Props) {
               showIcon
               message={
                 adoptResult.already_adopted
-                  ? t("memory.migrate.alreadyAdopted", "Sudah dimigrasi, dilewati")
-                  : t("memory.migrate.importDone", "Impor selesai")
+                  ? t("memory.migrate.alreadyAdopted", "已迁移，跳过")
+                  : t("memory.migrate.importDone", "导入完成")
               }
               description={
                 adoptResult.already_adopted
@@ -469,7 +469,7 @@ export default function MigrateMemory({ agentId }: Props) {
         title={
           <Space>
             <Stethoscope size={16} />
-            {t("memory.migrate.doctorTitle", "Validasi kesehatan migrasi")}
+            {t("memory.migrate.doctorTitle", "验证迁移健康状态")}
           </Space>
         }
         onCancel={closeModal}
@@ -478,12 +478,12 @@ export default function MigrateMemory({ agentId }: Props) {
           doctorResult
             ? [
                 <Button key="close" type="primary" onClick={closeModal}>
-                  {t("common.close", "Tutup")}
+                  {t("common.close", "关闭")}
                 </Button>,
               ]
             : [
                 <Button key="cancel" onClick={closeModal}>
-                  {t("common.cancel", "Batal")}
+                  {t("common.cancel", "取消")}
                 </Button>,
                 <Button
                   key="run"
@@ -492,7 +492,7 @@ export default function MigrateMemory({ agentId }: Props) {
                   loading={loading}
                   onClick={handleDoctor}
                 >
-                  {t("memory.migrate.runDoctor", "Jalankan pemeriksaan")}
+                  {t("memory.migrate.runDoctor", "开始检查")}
                 </Button>,
               ]
         }
@@ -523,7 +523,7 @@ export default function MigrateMemory({ agentId }: Props) {
                     }
                   >
                     <Button icon={<Download size={14} />}>
-                      {t("memory.migrate.chooseFile", "Pilih file")}
+                      {t("memory.migrate.chooseFile", "选择文件")}
                     </Button>
                   </Upload>
                 </Form.Item>
@@ -559,7 +559,7 @@ export default function MigrateMemory({ agentId }: Props) {
               Object.keys(doctorResult.row_count_diff).length > 0 ? (
                 <div style={{ marginTop: 12 }}>
                   <Text strong>
-                    {t("memory.migrate.rowCountDiff", "Selisih jumlah baris: ")}
+                    {t("memory.migrate.rowCountDiff", "行数差异：")}
                   </Text>
                   {Object.entries(doctorResult.row_count_diff).map(([k, v]) => (
                     <Tag

@@ -1,5 +1,7 @@
 # Oi
 
+> Oi based on Octop — Oi adalah rebrand dari [TencentCloud/Octop](https://github.com/TencentCloud/Octop), dengan struktur yang diselaraskan dengan upstream.
+
 Asisten AI self-hosted yang lebih pintar — multi-user, multi-agent. Dashboard full Bahasa Indonesia.
 
 ## Install

@@ -4,7 +4,6 @@ import { Globe, TerminalSquare } from "lucide-react";
 import PageShell from "../../../layouts/PageShell";
 import { usePathTabs } from "../../../hooks/usePathTabs";
 import { useCurrentUser } from "../../../hooks/useCurrentUser";
-import { useIsMobile } from "../../../hooks/useIsMobile";
 import { userCan } from "../../../utils/permissions";
 import TerminalPage from "../Terminal";
 import RemoteBrowserPage from "../RemoteBrowser";
@@ -31,7 +30,6 @@ export default function WorkbenchPage({
   isVisible = true,
 }: WorkbenchPageProps) {
   const { t } = useTranslation();
-  const isMobile = useIsMobile();
   const user = useCurrentUser();
   const isAllowed = useCallback(
     (tab: WorkbenchTab) => userCan(user, tab),
@@ -76,7 +74,7 @@ export default function WorkbenchPage({
   return (
     <PageShell
       title={pageTitle}
-      subtitle={isMobile ? undefined : t("workbench.description")}
+      subtitle={t("workbench.description")}
       fill
       pathTabs={pathTabs}
     >

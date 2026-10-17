@@ -1,7 +1,6 @@
 import { Empty } from "antd";
 import { useTranslation } from "react-i18next";
 import PageShell from "../../layouts/PageShell";
-import { useIsMobile } from "../../hooks/useIsMobile";
 
 interface Props {
   title?: string;
@@ -13,11 +12,10 @@ interface Props {
  */
 export default function AdminPlaceholder({ title, subtitle }: Props) {
   const { t } = useTranslation();
-  const isMobile = useIsMobile();
   return (
     <PageShell
       title={title || t("common.comingSoon", "Coming soon")}
-      subtitle={isMobile ? undefined : subtitle}
+      subtitle={subtitle}
     >
       <Empty
         description={t(

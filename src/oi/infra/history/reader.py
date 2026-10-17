@@ -97,21 +97,6 @@ async def read_page(
 async def export_messages(
     archive: HistoryArchive, registry: Any, agent_id: str, thread_id: str
 ) -> list[Any]:
-    # Flag-gated mmap fast path: export_messages reads the *complete* thread
-    # history, which maps 1:1 onto MmapHistoryReader's full-list cache.
-    # NOTE: read_page() is intentionally NOT hooked — its limit/offset/cursor
-    # pagination merges segments + projection + legacy-checkpoint sources with
-    # source-specific cursor formats, which a full-list cache cannot serve
-    # without breaking cursor semantics. Identity when the flag is OFF.
-    from oi.infra.optimizations import default_cache_dir, get_manager  # noqa: PLC0415
-
-    manager = get_manager()
-    reader = None
-    if manager is not None and getattr(manager.flags, "mmap_history", False):
-        reader = manager.mmap_reader(str(default_cache_dir()))
-        cached = reader.read(thread_id)
-        if cached is not None:
-            return cached
     page = await read_page(archive, registry, agent_id, thread_id, limit=1000)
     messages = page["messages"]
     while page["has_more"]:
@@ -125,42 +110,4 @@ async def export_messages(
             cursor=page["next_cursor"],
         )
         messages = [*page["messages"], *messages]
-    if reader is not None:
-        # Populate the cache so the next export is served from RAM.
-        reader.store(thread_id, messages)
     return messages  # type: ignore[no-any-return]
-
-
-async def export_messages_batched(
-    archive: HistoryArchive,
-    registry: Any,
-    agent_id: str,
-    thread_id: str,
-    *,
-    batch_size: int = 1000,
-) -> Any:
-    """Yield a thread's history in batches without loading it all at once.
-
-    Memory-safe alternative to :func:`export_messages` for very long
-    threads: each page is yielded (and can be released by the consumer)
-    before the next page is fetched, so peak memory is O(``batch_size``)
-    instead of O(thread length). Batches are yielded **newest-first**
-    (the same order :func:`read_page` returns); consumers that need
-    chronological order should process batches in reverse or reverse
-    within their own bounded window.
-    """
-    page = await read_page(archive, registry, agent_id, thread_id, limit=batch_size)
-    yield page["messages"]
-    seen = len(page["messages"])
-    while page["has_more"]:
-        page = await read_page(
-            archive,
-            registry,
-            agent_id,
-            thread_id,
-            limit=batch_size,
-            offset=seen,
-            cursor=page["next_cursor"],
-        )
-        yield page["messages"]
-        seen += len(page["messages"])

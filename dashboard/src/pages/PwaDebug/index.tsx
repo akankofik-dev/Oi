@@ -383,7 +383,7 @@ export default function PwaDebugPage() {
   const handleClearDismissed = () => {
     localStorage.removeItem("pwa:install-dismissed");
     localStorage.removeItem("pwa:ios-guide-shown");
-    alert("Sudah dibersihkan, silakan refresh halaman");
+    alert("已清除，请刷新页面");
   };
 
   const handleCopyLog = () => {
@@ -438,11 +438,11 @@ export default function PwaDebugPage() {
       setSwLog((prev) => [...prev, `[force] triggerInstall → ${result}`]);
 
       if (result === "accepted") {
-        alert("Instalasi diterima, aplikasi akan muncul di dock/launcher");
+        alert("安装已接受，应用应出现在程序坞/启动台");
         return;
       }
       if (result === "dismissed") {
-        alert("Dialog instalasi muncul, Anda memilih batal");
+        alert("安装对话框已弹出，你选择了取消");
         return;
       }
 

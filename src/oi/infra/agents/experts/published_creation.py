@@ -10,7 +10,10 @@ from pathlib import Path
 from sqlite3 import IntegrityError as SqliteIntegrityError
 from typing import Any, cast
 
-from psycopg import IntegrityError as PsycopgIntegrityError
+try:
+    from psycopg import IntegrityError as PsycopgIntegrityError
+except ImportError:  # pragma: no cover - optional PostgreSQL driver
+    PsycopgIntegrityError = None  # type: ignore[assignment,misc]
 
 from oi.infra.agents.experts.avatar import (
     bind_workspace_avatar_icon_url,
@@ -37,6 +40,10 @@ from oi.infra.errors import ErrorCode, OiError
 from oi.infra.history.trajectory.settings import apply_enable_trajectory
 from oi.infra.users.identity import User
 from oi.infra.utils.ulid import new_ulid
+
+_DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (SqliteIntegrityError,)
+if PsycopgIntegrityError is not None:
+    _DB_INTEGRITY_ERRORS = (SqliteIntegrityError, PsycopgIntegrityError)
 
 
 @dataclass(frozen=True)
@@ -236,7 +243,7 @@ async def publish_agent_expert(
                 color=color,
             ),
         )
-    except (SqliteIntegrityError, PsycopgIntegrityError) as exc:
+    except _DB_INTEGRITY_ERRORS as exc:
         await asyncio.to_thread(shutil.rmtree, snapshot_dir, ignore_errors=True)
         raise OiError.localized(
             ErrorCode.PUBLISHED_EXPERT_SLUG_TAKEN,

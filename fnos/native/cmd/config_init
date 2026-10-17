@@ -1,0 +1,25 @@
+#!/bin/bash
+#
+# Oi 本地版 — 配置变更前回调
+# 设置窗口只改管理员密码：两栏都空=保持不变；填了则校验一致与密码策略。
+#
+set -euo pipefail
+
+_OI_COMMON="$(dirname "$0")/common.sh"
+[ -f "$_OI_COMMON" ] || _OI_COMMON="/var/apps/oi-native/cmd/common.sh"
+[ -f "$_OI_COMMON" ] && source "$_OI_COMMON"
+
+fail_config() {
+    echo "[oi-native] $1" > "${TRIM_TEMP_LOGFILE:-/dev/null}" 2>&1 || true
+    echo "[oi-native] $1" >&2 || true
+    exit 1
+}
+
+WIZARD_PASSWORD="$(oi_sanitize_value "${wizard_admin_password:-}")"
+WIZARD_CONFIRM="$(oi_sanitize_value "${wizard_admin_password_confirm:-}")"
+
+if ! REASON="$(oi_validate_optional_password_change "$WIZARD_PASSWORD" "$WIZARD_CONFIRM" 2>&1)"; then
+    fail_config "$REASON"
+fi
+
+exit 0

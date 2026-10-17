@@ -83,7 +83,9 @@ def authorize_url_for_paste(kind: str, settings_repo: Any) -> str | None:
     return entry.quick_auth_url if entry else None
 
 
-def auth_info_for_kind(kind: str, settings_repo: Any) -> dict[str, str | None]:
+def auth_info_for_kind(
+    kind: str, settings_repo: Any, *, locale: str = "en"
+) -> dict[str, str | None]:
     entry = get_catalog_entry(kind)
     if entry is None:
         return {
@@ -98,7 +100,7 @@ def auth_info_for_kind(kind: str, settings_repo: Any) -> dict[str, str | None]:
         "login_url": entry.login_url,
         "guide_url": entry.guide_url or entry.doc_url,
         "manual_url": entry.manual_url or entry.guide_url or entry.doc_url,
-        "auth_hint": entry.auth_hint,
+        "auth_hint": entry.auth_hint.resolve(locale) if entry.auth_hint else None,
     }
 
 
@@ -113,7 +115,7 @@ async def exchange_pasted_auth_code(
     del settings_repo, extra
     code = code.strip()
     if not code:
-        raise ValueError("Kode otorisasi tidak boleh kosong")
+        raise ValueError("授权码不能为空")
 
     if kind in _AUTH_CODE_PASSTHROUGH_KINDS:
         return {"cookie": code}

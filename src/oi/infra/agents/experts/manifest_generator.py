@@ -338,21 +338,19 @@ def normalize_manifest_assets(
     """Validate and trim generated manifest fields."""
     if isinstance(payload.get("manifest"), dict):
         payload = payload["manifest"]
-    label_zh, label_en, label_id = _localized_pair(
+    label_zh, label_en = _localized_pair(
         payload.get("label"),
         fallback_zh=fallback_name_zh,
         fallback_en=fallback_name_en,
-        fallback_id="Ahli",
         max_chars=_MAX_LABEL_CHARS,
     )
     label_zh = _ensure_zh_expert_label(label_zh)
     label_en = _ensure_en_expert_label(label_en)
 
-    expert_description_zh, expert_description_en, expert_description_id = _localized_pair(
+    expert_description_zh, expert_description_en = _localized_pair(
         payload.get("description"),
         fallback_zh=fallback_summary_zh or f"围绕「{label_zh}」提供专家级工作流支持。",
         fallback_en=fallback_summary_en or f"Expert workflow for {label_en}.",
-        fallback_id=f"Workflow ahli untuk {label_id}.",
         max_chars=_MAX_EXPERT_DESCRIPTION_CHARS,
     )
     welcome = payload.get("welcome_message")
@@ -386,34 +384,31 @@ def normalize_manifest_assets(
     for idx, raw in enumerate(raw_prompts):
         if not isinstance(raw, dict):
             continue
-        title_zh, title_en, title_id = _localized_pair(
+        title_zh, title_en = _localized_pair(
             raw.get("title"),
             fallback_zh="开始处理",
             fallback_en="Start work",
-            fallback_id="Mulai kerjakan",
             max_chars=_MAX_TITLE_CHARS,
         )
-        description_zh, description_en, description_id = _localized_pair(
+        description_zh, description_en = _localized_pair(
             raw.get("description"),
             fallback_zh="描述目标、材料和期望结果",
             fallback_en="Describe the goal, materials, and expected result",
-            fallback_id="Jelaskan tujuan, bahan, dan hasil yang diharapkan",
             max_chars=_MAX_DESCRIPTION_CHARS,
         )
-        prompt_zh, prompt_en, prompt_id = _localized_pair(
+        prompt_zh, prompt_en = _localized_pair(
             raw.get("prompt"),
             fallback_zh=f"请作为「{label_zh}」，帮我处理以下任务：\n\n",
             fallback_en=f"As the {label_en}, help me with this task:\n\n",
-            fallback_id=f"Sebagai {label_id}, bantu saya dengan tugas ini:\n\n",
             max_chars=_MAX_PROMPT_CHARS,
         )
         if not (title_zh and title_en and prompt_zh and prompt_en):
             continue
         prompts.append(
             {
-                "title": {"zh": title_zh, "en": title_en, "id": title_id},
-                "description": {"zh": description_zh, "en": description_en, "id": description_id},
-                "prompt": {"zh": prompt_zh, "en": prompt_en, "id": prompt_id},
+                "title": {"zh": title_zh, "en": title_en},
+                "description": {"zh": description_zh, "en": description_en},
+                "prompt": {"zh": prompt_zh, "en": prompt_en},
                 "color": _normalize_color(raw.get("color"), idx),
                 "icon_name": _normalize_icon(raw.get("icon_name"), idx),
             },
@@ -453,8 +448,8 @@ def normalize_manifest_assets(
             },
         )
     return {
-        "label": {"zh": label_zh, "en": label_en, "id": label_id},
-        "description": {"zh": expert_description_zh, "en": expert_description_en, "id": expert_description_id},
+        "label": {"zh": label_zh, "en": label_en},
+        "description": {"zh": expert_description_zh, "en": expert_description_en},
         "welcome_message": {"zh": welcome_zh, "en": welcome_en},
         "quick_prompts": prompts[:_MAX_QUICK_PROMPTS],
         "task_examples": task_examples,
@@ -552,22 +547,16 @@ def _localized_pair(
     *,
     fallback_zh: str,
     fallback_en: str,
-    fallback_id: str = "",
     max_chars: int,
-) -> tuple[str, str, str]:
+) -> tuple[str, str]:
     if isinstance(node, dict):
         zh = str(node.get("zh") or node.get("cn") or fallback_zh)
         en = str(node.get("en") or fallback_en)
-        id_ = str(node.get("id") or fallback_id or en)
     elif isinstance(node, str):
-        zh, en, id_ = node, fallback_en, fallback_id or fallback_en
+        zh, en = node, fallback_en
     else:
-        zh, en, id_ = fallback_zh, fallback_en, fallback_id or fallback_en
-    return (
-        _clip(zh.strip(), max_chars),
-        _clip(en.strip(), max_chars),
-        _clip(id_.strip(), max_chars),
-    )
+        zh, en = fallback_zh, fallback_en
+    return _clip(zh.strip(), max_chars), _clip(en.strip(), max_chars)
 
 
 def _normalize_color(value: Any, idx: int) -> str:

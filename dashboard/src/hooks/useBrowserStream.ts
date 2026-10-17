@@ -72,17 +72,6 @@ export interface StreamSessionInfo {
   channel_source: string;
 }
 
-interface LastConnectArgs {
-  url: string;
-  width: number;
-  height: number;
-  callbacks: BrowserStreamCallbacks;
-  options: ConnectOptions;
-}
-
-/** Max delay between reconnect attempts (exponential backoff cap). */
-const MAX_RETRY_MS = 15_000;
-
 export function useBrowserStream() {
   const wsRef = useRef<WebSocket | null>(null);
   const callbacksRef = useRef<BrowserStreamCallbacks | null>(null);
@@ -94,175 +83,11 @@ export function useBrowserStream() {
     null,
   );
 
-  // --- Auto-reconnect state (exponential backoff, mirrors useDashboardPushToast) ---
-  const reconnectTimerRef = useRef<number | null>(null);
-  const retryCountRef = useRef(0);
-  /** True when the close was intentional (stop/disconnect/unmount) — never reconnect then. */
-  const manualCloseRef = useRef(false);
-  /** True when ws.onerror fired before onclose (network-level failure). */
-  const networkErrorRef = useRef(false);
-  /** Args of the last connect() call, reused for reconnect attempts. */
-  const lastConnectArgsRef = useRef<LastConnectArgs | null>(null);
-  /** Ref indirection so scheduleReconnect can call the latest establishConnection. */
-  const establishRef = useRef<() => void>(() => {});
-
   const updateStatus = useCallback((s: BrowserStreamState) => {
     statusRef.current = s;
     setStatus(s);
     callbacksRef.current?.onStatusChange?.(s);
   }, []);
-
-  const clearReconnectTimer = useCallback(() => {
-    if (reconnectTimerRef.current !== null) {
-      window.clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-  }, []);
-
-  /** Schedule a reconnect attempt with exponential backoff (1s, 2s, 4s … capped at 15s). */
-  const scheduleReconnect = useCallback(() => {
-    if (manualCloseRef.current) return;
-    const args = lastConnectArgsRef.current;
-    if (!args) return;
-    if (reconnectTimerRef.current !== null) return; // already scheduled
-    const delay = Math.min(1000 * 2 ** retryCountRef.current, MAX_RETRY_MS);
-    retryCountRef.current += 1;
-    updateStatus("connecting");
-    reconnectTimerRef.current = window.setTimeout(() => {
-      reconnectTimerRef.current = null;
-      establishRef.current();
-    }, delay);
-  }, [updateStatus]);
-
-  /** Create the WebSocket and wire up handlers. Uses lastConnectArgsRef. */
-  const establishConnection = useCallback(() => {
-    const args = lastConnectArgsRef.current;
-    if (!args) return;
-    const { url, width, height, options } = args;
-
-    const wsUrl = buildWsUrl(width, height, options.bridgeConnectionId);
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(wsUrl);
-    } catch (err) {
-      console.error("[BrowserStream] Failed to create WebSocket:", err);
-      wsRef.current = null;
-      updateStatus("error");
-      return;
-    }
-
-    ws.onopen = () => {
-      retryCountRef.current = 0;
-      const startMsg: Record<string, unknown> = {
-        type: "start",
-        url,
-        width,
-        height,
-        reuse_session: true,
-      };
-      if (options.sessionId) {
-        startMsg.session_id = options.sessionId;
-      }
-      ws.send(JSON.stringify(startMsg));
-      setCurrentUrl(url);
-    };
-
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data as string) as {
-          type: string;
-          data?: string;
-          status?: string;
-          message?: string;
-          tabs?: BrowserTab[];
-        };
-
-        if (msg.type === "frame" && msg.data) {
-          callbacksRef.current?.onFrame(msg.data);
-        } else if (msg.type === "status" && msg.status) {
-          updateStatus(msg.status as BrowserStreamState);
-        } else if (msg.type === "tabs" && msg.tabs) {
-          setTabs((prevTabs) =>
-            mergeBrowserTabsStable(prevTabs, msg.tabs ?? []),
-          );
-          const activeTab = msg.tabs.find((t) => t.active);
-          if (activeTab) setCurrentUrl(activeTab.url);
-        } else if (msg.type === "error") {
-          console.error("[BrowserStream] Server error:", msg.message);
-          callbacksRef.current?.onError?.(msg.message ?? "Unknown error");
-          updateStatus("error");
-        } else if (msg.type === "session_update") {
-          // Real-time session state pushed by the backend
-          const info: StreamSessionInfo = {
-            session_id:
-              ((msg as Record<string, unknown>).session_id as string) ?? "",
-            state: ((msg as Record<string, unknown>).state as string) ?? "",
-            control_owner:
-              ((msg as Record<string, unknown>).control_owner as
-                | "agent"
-                | "user") ?? "agent",
-            current_url:
-              ((msg as Record<string, unknown>).current_url as string) ?? "",
-            conversation_id:
-              ((msg as Record<string, unknown>).conversation_id as string) ??
-              "",
-            channel_source:
-              ((msg as Record<string, unknown>).channel_source as string) ??
-              "dashboard",
-          };
-          setSessionInfo(info);
-        }
-      } catch {
-        // Non-JSON frames — ignore
-      }
-    };
-
-    ws.onerror = () => {
-      // Network-level failure: onclose follows; mark it so we reconnect.
-      networkErrorRef.current = true;
-      updateStatus("error");
-    };
-
-    ws.onclose = () => {
-      // Stale socket (replaced by a newer connect) — ignore.
-      if (wsRef.current !== ws) return;
-      wsRef.current = null;
-      const wasNetworkError = networkErrorRef.current;
-      networkErrorRef.current = false;
-
-      if (manualCloseRef.current) {
-        // Intentional stop/disconnect — keep the previous terminal behavior.
-        if (
-          statusRef.current !== "stopped" &&
-          statusRef.current !== "idle" &&
-          statusRef.current !== "error"
-        ) {
-          updateStatus("stopped");
-        }
-        return;
-      }
-
-      const s = statusRef.current;
-      if (
-        wasNetworkError ||
-        s === "connecting" ||
-        s === "browser_started" ||
-        s === "streaming"
-      ) {
-        // Unexpected drop (tunnel down, network blip, server restart) — retry.
-        scheduleReconnect();
-      } else if (s !== "stopped" && s !== "idle" && s !== "error") {
-        updateStatus("stopped");
-      }
-      // Don't clear tabs on close — this preserves the tab bar state
-      // during auto-reconnect so it doesn't flash empty.
-    };
-
-    wsRef.current = ws;
-  }, [updateStatus, scheduleReconnect]);
-
-  // Keep establishRef pointing at the latest establishConnection.
-  establishRef.current = establishConnection;
 
   /** Connect WebSocket and start the browser. */
   const connect = useCallback(
@@ -274,12 +99,6 @@ export function useBrowserStream() {
       options: ConnectOptions = {},
     ) => {
       callbacksRef.current = callbacks;
-      // Fresh intentional connect: allow reconnects again, reset backoff.
-      manualCloseRef.current = false;
-      networkErrorRef.current = false;
-      retryCountRef.current = 0;
-      clearReconnectTimer();
-      lastConnectArgsRef.current = { url, width, height, callbacks, options };
       updateStatus("connecting");
 
       // Close any existing connection
@@ -287,9 +106,100 @@ export function useBrowserStream() {
         wsRef.current.close();
       }
 
-      establishRef.current();
+      const wsUrl = buildWsUrl(width, height, options.bridgeConnectionId);
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(wsUrl);
+      } catch (err) {
+        console.error("[BrowserStream] Failed to create WebSocket:", err);
+        updateStatus("error");
+        return;
+      }
+
+      ws.onopen = () => {
+        const startMsg: Record<string, unknown> = {
+          type: "start",
+          url,
+          width,
+          height,
+          reuse_session: true,
+        };
+        if (options.sessionId) {
+          startMsg.session_id = options.sessionId;
+        }
+        ws.send(JSON.stringify(startMsg));
+        setCurrentUrl(url);
+      };
+
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data as string) as {
+            type: string;
+            data?: string;
+            status?: string;
+            message?: string;
+            tabs?: BrowserTab[];
+          };
+
+          if (msg.type === "frame" && msg.data) {
+            callbacksRef.current?.onFrame(msg.data);
+          } else if (msg.type === "status" && msg.status) {
+            updateStatus(msg.status as BrowserStreamState);
+          } else if (msg.type === "tabs" && msg.tabs) {
+            setTabs((prevTabs) =>
+              mergeBrowserTabsStable(prevTabs, msg.tabs ?? []),
+            );
+            const activeTab = msg.tabs.find((t) => t.active);
+            if (activeTab) setCurrentUrl(activeTab.url);
+          } else if (msg.type === "error") {
+            console.error("[BrowserStream] Server error:", msg.message);
+            callbacksRef.current?.onError?.(msg.message ?? "Unknown error");
+            updateStatus("error");
+          } else if (msg.type === "session_update") {
+            // Real-time session state pushed by the backend
+            const info: StreamSessionInfo = {
+              session_id:
+                ((msg as Record<string, unknown>).session_id as string) ?? "",
+              state: ((msg as Record<string, unknown>).state as string) ?? "",
+              control_owner:
+                ((msg as Record<string, unknown>).control_owner as
+                  | "agent"
+                  | "user") ?? "agent",
+              current_url:
+                ((msg as Record<string, unknown>).current_url as string) ?? "",
+              conversation_id:
+                ((msg as Record<string, unknown>).conversation_id as string) ??
+                "",
+              channel_source:
+                ((msg as Record<string, unknown>).channel_source as string) ??
+                "dashboard",
+            };
+            setSessionInfo(info);
+          }
+        } catch {
+          // Non-JSON frames — ignore
+        }
+      };
+
+      ws.onerror = () => {
+        updateStatus("error");
+      };
+
+      ws.onclose = () => {
+        if (
+          statusRef.current !== "stopped" &&
+          statusRef.current !== "idle" &&
+          statusRef.current !== "error"
+        ) {
+          updateStatus("stopped");
+        }
+        // Don't clear tabs on close — this preserves the tab bar state
+        // during auto-reconnect so it doesn't flash empty.
+      };
+
+      wsRef.current = ws;
     },
-    [updateStatus, clearReconnectTimer],
+    [updateStatus],
   );
 
   /** Send a user input event to the remote browser. */
@@ -337,18 +247,12 @@ export function useBrowserStream() {
 
   /** Stop the remote browser. */
   const stop = useCallback(() => {
-    // Intentional: never auto-reconnect after an explicit stop.
-    manualCloseRef.current = true;
-    clearReconnectTimer();
     sendEvent({ type: "stop" });
     updateStatus("stopped");
-  }, [sendEvent, updateStatus, clearReconnectTimer]);
+  }, [sendEvent, updateStatus]);
 
   /** Disconnect WebSocket completely. */
   const disconnect = useCallback(() => {
-    // Intentional: never auto-reconnect after an explicit disconnect.
-    manualCloseRef.current = true;
-    clearReconnectTimer();
     if (wsRef.current) {
       try {
         wsRef.current.close();
@@ -359,13 +263,11 @@ export function useBrowserStream() {
     }
     updateStatus("idle");
     setTabs([]);
-  }, [updateStatus, clearReconnectTimer]);
+  }, [updateStatus]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      manualCloseRef.current = true;
-      clearReconnectTimer();
       if (wsRef.current) {
         try {
           wsRef.current.close();
@@ -374,7 +276,7 @@ export function useBrowserStream() {
         }
       }
     };
-  }, [clearReconnectTimer]);
+  }, []);
 
   return {
     status,

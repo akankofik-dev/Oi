@@ -50,10 +50,7 @@ def _get_version() -> str:
 def _print_version(ctx: click.Context, _param: click.Parameter, value: bool) -> None:
     if not value or ctx.resilient_parsing:
         return
-    from oi.cli.support.style import echo_banner
-
-    echo_banner()
-    click.echo(f"Oi v{_get_version()}")
+    click.echo(f"oi v{_get_version()}")
     ctx.exit()
 
 

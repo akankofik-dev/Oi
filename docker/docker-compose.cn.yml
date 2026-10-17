@@ -1,0 +1,50 @@
+# =============================================================================
+# Oi — Docker Compose（国内镜像）
+#
+# 不在本地构建。官方 GHCR（ghcr.io/akankofik-dev/oi）拉取失败时用本文件，
+# 镜像来自南京大学 GHCR 源：ghcr.nju.edu.cn/tencentcloud/oi:latest
+#
+# 用法（在仓库根目录执行）:
+#   docker compose -f docker/docker-compose.cn.yml up -d
+#   OI_PORT=9090 docker compose -f docker/docker-compose.cn.yml up -d
+#   OI_DEFAULT_PASSWORD=<your-strong-password> docker compose -f docker/docker-compose.cn.yml up -d
+#
+# 环境变量与 docker-compose.yml 相同。docker/.env 仅用于 Compose 插值；
+# 变量必须列在下方 environment 才会进入容器。
+# =============================================================================
+
+services:
+  oi:
+    image: ghcr.nju.edu.cn/tencentcloud/oi:latest
+    container_name: oi
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    ports:
+      - "${OI_PORT:-8088}:${OI_PORT:-8088}"
+    volumes:
+      - ${OI_DATA:-~/.oi}:/data/.oi
+    environment:
+      - HOME=/data
+      - OI_BIND_HOST=0.0.0.0
+      - OI_PORT=${OI_PORT:-8088}
+      - OI_LOG_LEVEL=${OI_LOG_LEVEL:-info}
+      - OI_DEFAULT_PASSWORD=${OI_DEFAULT_PASSWORD:-}
+      - OI_ADMIN_USERNAME=${OI_ADMIN_USERNAME:-admin}
+      - OI_ADMIN_DISPLAY_NAME=${OI_ADMIN_DISPLAY_NAME:-Admin}
+      - OI_DATABASE_URL=${OI_DATABASE_URL:-}
+      - OI_DATABASE_DRIVER=${OI_DATABASE_DRIVER:-}
+      - OI_DATABASE_SQLITE_PATH=${OI_DATABASE_SQLITE_PATH:-}
+      - OI_DATABASE_HOST=${OI_DATABASE_HOST:-}
+      - OI_DATABASE_PORT=${OI_DATABASE_PORT:-}
+      - OI_DATABASE_NAME=${OI_DATABASE_NAME:-}
+      - OI_DATABASE_USER=${OI_DATABASE_USER:-}
+      - OI_DATABASE_PASSWORD=${OI_DATABASE_PASSWORD:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+      - LANGFUSE_TRACING_ENABLED=${LANGFUSE_TRACING_ENABLED:-true}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_BASE_URL=${LANGFUSE_BASE_URL:-}

@@ -143,8 +143,8 @@ def _detect_shell() -> str:
         shell = str(entry.pw_shell)
         if _usable(shell):
             return shell
-    except Exception as e:  # pragma: no cover - non-posix
-        logger.debug("getpwuid gagal (non-posix), pakai fallback: %s", e)
+    except Exception:  # pragma: no cover - non-posix
+        pass
     for candidate in ("/bin/bash", "/bin/sh"):
         if os.path.exists(candidate):
             return candidate
@@ -479,8 +479,8 @@ async def terminal_context(
                     if line.startswith("PRETTY_NAME="):
                         distro = line.split("=", 1)[1].strip().strip('"')
                         break
-    except Exception as e:
-        logger.debug("baca /etc/os-release gagal: %s", e)
+    except Exception:
+        pass
 
     supported, unsupported_reason = terminal_supported()
     return {
