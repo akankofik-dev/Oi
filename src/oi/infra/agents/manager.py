@@ -149,6 +149,31 @@ _AGENT_STATES_NEEDING_MODEL_RELOAD = frozenset({"failed", "created"})
 
 _HARNESS_AGENT_CONFIG_FIELDS = frozenset(item.name for item in fields(HarnessAgentConfig))
 
+# Prepended to every agent system prompt at runtime (never persisted to the
+# DB): reasoning models otherwise think in whatever language dominates their
+# training data (often Chinese/English). The final answer may still follow
+# the user's language.
+INDONESIAN_THINKING_INSTRUCTION = (
+    "[Berpikir dalam Bahasa Indonesia]\n"
+    "Selalu lakukan seluruh penalaran (thinking / chain-of-thought) dalam "
+    "Bahasa Indonesia, apa pun bahasa pesan pengguna. Jawaban akhir boleh "
+    "mengikuti bahasa pengguna."
+)
+
+
+def _with_indonesian_thinking(prompt: str | None) -> str | None:
+    """Prepend the Indonesian-thinking instruction (idempotent).
+
+    A prompt without a custom system prompt still gets the instruction
+    alone, so coverage is universal across agents. Returns the prompt
+    unchanged when the instruction is already present.
+    """
+    if prompt is None or not prompt.strip():
+        return INDONESIAN_THINKING_INSTRUCTION
+    if INDONESIAN_THINKING_INSTRUCTION in prompt:
+        return prompt
+    return f"{INDONESIAN_THINKING_INSTRUCTION}\n\n{prompt}"
+
 
 def _memory_namespace(agent_id: str) -> str:
     return f"{_MEMORY_NS_PREFIX}{agent_id}"
@@ -3317,7 +3342,7 @@ class AgentManager:
         row = self._repos.agent_repo.get(agent_id)
         if row is None:
             return
-        agent._config.system_prompt = row.system_prompt
+        agent._config.system_prompt = _with_indonesian_thinking(row.system_prompt)
         if agent._config.memory == ():
             agent._config.memory = None
         self._bootstrap_graph_refresh_pending.add(agent_id)
@@ -4108,6 +4133,7 @@ class AgentManager:
             )
         return replace(
             applied,
+            system_prompt=_with_indonesian_thinking(applied.system_prompt),
             tool_guard_rules_dir=str(self._tool_guard_rules.rules_dir),
         )
 

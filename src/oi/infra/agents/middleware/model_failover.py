@@ -52,8 +52,32 @@ def _fits_context(
     return estimated_tokens <= int(cap * _CONTEXT_SAFETY_RATIO)
 
 
+def _is_rate_limit(exc: Exception) -> bool:
+    """True when *exc* is a provider rate-limit (HTTP 429).
+
+    Primary signal is Octop's message-based classifier. Structured SDK
+    errors whose message lacks "429" are covered by walking the cause chain
+    for a ``status_code == 429`` attribute.
+    """
+    if classify_model_failure(exc).kind == "rate_limit":
+        return True
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if getattr(current, "status_code", None) == 429:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 class SafeModelFailoverMiddleware(AgentMiddleware[Any, Any]):
-    """Retry one model, then switch only for AUTO and safe failure classes."""
+    """Retry one model, then switch for AUTO turns on safe failure classes.
+
+    Pinned (explicitly chosen) models also switch, but only on rate limits
+    (429) — the user chose that model, so other failures stay on it.
+    At most ``max_models`` distinct models are tried per model call.
+    """
 
     def __init__(
         self,
@@ -65,12 +89,14 @@ class SafeModelFailoverMiddleware(AgentMiddleware[Any, Any]):
         initial_delay: float,
         max_delay: float,
         on_failure: Callable[[Exception], str] | Literal["error"] | None = None,
+        max_models: int = 3,
     ) -> None:
         super().__init__()
         self._health = health
         self._candidates = candidates
         self._model_for_ref = model_for_ref
         self._on_failure = on_failure
+        self._max_models = max(1, max_models)
         self._retry = ModelRetryMiddleware(
             max_retries=max_retries,
             initial_delay=initial_delay,
@@ -109,6 +135,28 @@ class SafeModelFailoverMiddleware(AgentMiddleware[Any, Any]):
             and _fits_context(candidate, estimated, route_cap)
         ]
 
+    def _attempts(
+        self, request: ModelRequest[Any], current_ref: str, automatic: bool
+    ) -> list[tuple[str, Any]]:
+        """Ordered models to try: current model first, then healthy fallbacks.
+
+        Fallbacks are always built (not only for AUTO turns) so a pinned
+        model that hits a rate limit can fail over too. The list is capped
+        at ``max_models`` distinct models per model call, so one turn never
+        fans out across every configured provider. Fallback candidates
+        already carry the same messages (same context) and are filtered to
+        healthy models whose context window fits the request.
+        """
+        attempts: list[tuple[str, Any]] = []
+        if not automatic or not current_ref or self._health.begin_attempt(current_ref):
+            attempts.append((current_ref, request.model))
+        if current_ref:
+            attempts.extend(
+                (candidate.ref, self._model_for_ref(candidate.ref))
+                for candidate in self._fallbacks(request, current_ref)
+            )
+        return attempts[: self._max_models]
+
     def _record_failure(self, ref: str, exc: Exception) -> bool:
         decision = classify_model_failure(exc)
         if decision.scope is not FailureScope.NONE:
@@ -122,14 +170,7 @@ class SafeModelFailoverMiddleware(AgentMiddleware[Any, Any]):
     ) -> ModelResponse[Any]:
         current_ref, automatic = self._route(request)
         last_error: Exception | None = None
-        attempts: list[tuple[str, Any]] = []
-        if not automatic or not current_ref or self._health.begin_attempt(current_ref):
-            attempts.append((current_ref, request.model))
-        if automatic and current_ref:
-            attempts.extend(
-                (candidate.ref, self._model_for_ref(candidate.ref))
-                for candidate in self._fallbacks(request, current_ref)
-            )
+        attempts = self._attempts(request, current_ref, automatic)
 
         for ref, model in attempts:
             if automatic and ref != current_ref and not self._health.begin_attempt(ref):
@@ -144,7 +185,10 @@ class SafeModelFailoverMiddleware(AgentMiddleware[Any, Any]):
             except Exception as exc:
                 last_error = exc
                 may_failover = self._record_failure(ref, exc)
-                if not automatic or not may_failover:
+                # Pinned models fail over only on rate limits (429): the user
+                # chose that model, so other failures stay on it. AUTO turns
+                # keep the previous behaviour for every failover-eligible class.
+                if not may_failover or (not automatic and not _is_rate_limit(exc)):
                     return self._failure_response(exc)
                 logger.warning("AUTO model route failed; trying next candidate: model=%s", ref)
                 continue
@@ -162,14 +206,7 @@ class SafeModelFailoverMiddleware(AgentMiddleware[Any, Any]):
     ) -> ModelResponse[Any]:
         current_ref, automatic = self._route(request)
         last_error: Exception | None = None
-        attempts: list[tuple[str, Any]] = []
-        if not automatic or not current_ref or self._health.begin_attempt(current_ref):
-            attempts.append((current_ref, request.model))
-        if automatic and current_ref:
-            attempts.extend(
-                (candidate.ref, self._model_for_ref(candidate.ref))
-                for candidate in self._fallbacks(request, current_ref)
-            )
+        attempts = self._attempts(request, current_ref, automatic)
 
         for ref, model in attempts:
             if automatic and ref != current_ref and not self._health.begin_attempt(ref):
@@ -184,7 +221,10 @@ class SafeModelFailoverMiddleware(AgentMiddleware[Any, Any]):
             except Exception as exc:
                 last_error = exc
                 may_failover = self._record_failure(ref, exc)
-                if not automatic or not may_failover:
+                # Pinned models fail over only on rate limits (429): the user
+                # chose that model, so other failures stay on it. AUTO turns
+                # keep the previous behaviour for every failover-eligible class.
+                if not may_failover or (not automatic and not _is_rate_limit(exc)):
                     return self._failure_response(exc)
                 logger.warning("AUTO model route failed; trying next candidate: model=%s", ref)
                 continue

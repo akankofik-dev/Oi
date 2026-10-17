@@ -298,3 +298,77 @@ async def test_provider_failure_skips_sibling_model(monkeypatch) -> None:
     assert response.result[0].content == "ok"
     assert attempts == ["p/a", "q/c"]
     assert configurable["model"] == "q/c"
+
+
+@pytest.mark.asyncio
+async def test_pinned_route_switches_on_rate_limit(monkeypatch) -> None:
+    """Pinned model + 429 fails over to the next model (same context)."""
+    models = {"p/a": _model("p/a", 100_000), "q/b": _model("q/b", 100_000)}
+    health = ModelHealthRegistry(clock=lambda: 100.0)
+    middleware = SafeModelFailoverMiddleware(
+        health=health,
+        candidates=lambda _current, _vision: [AutoRouteCandidate("q/b", 100_000)],
+        model_for_ref=models.__getitem__,
+        max_retries=0,
+        initial_delay=0,
+        max_delay=0,
+        on_failure="error",
+    )
+    monkeypatch.setattr(
+        model_failover,
+        "_configurable",
+        lambda _request: {"model": "p/a", "oi_auto_route": False},
+    )
+    attempts: list[str] = []
+
+    async def handler(request: ModelRequest) -> ModelResponse:
+        attempts.append(request.model.model)
+        if request.model.model == "p/a":
+            raise RuntimeError("HTTP 429 too many requests")
+        return ModelResponse(result=[AIMessage(content="ok")])
+
+    response = await middleware.awrap_model_call(
+        ModelRequest(model=models["p/a"], messages=[HumanMessage(content="hello")]),
+        handler,
+    )
+
+    assert response.result[0].content == "ok"
+    assert attempts == ["p/a", "q/b"]
+    assert not health.is_routable("p/a")
+
+
+@pytest.mark.asyncio
+async def test_auto_route_caps_models_at_three(monkeypatch) -> None:
+    """AUTO + 429 with 5 candidates tries at most 3 distinct models."""
+    refs = ["a/1", "b/2", "c/3", "d/4", "e/5", "f/6"]
+    models = {ref: _model(ref, 100_000) for ref in refs}
+    health = ModelHealthRegistry(clock=lambda: 100.0)
+    middleware = SafeModelFailoverMiddleware(
+        health=health,
+        candidates=lambda _current, _vision: [
+            AutoRouteCandidate(ref, 100_000) for ref in refs[1:]
+        ],
+        model_for_ref=models.__getitem__,
+        max_retries=0,
+        initial_delay=0,
+        max_delay=0,
+        on_failure="error",
+    )
+    monkeypatch.setattr(
+        model_failover,
+        "_configurable",
+        lambda _request: {"model": "a/1", "oi_auto_route": True},
+    )
+    attempts: list[str] = []
+
+    async def handler(request: ModelRequest) -> ModelResponse:
+        attempts.append(request.model.model)
+        raise RuntimeError("HTTP 429 too many requests")
+
+    with pytest.raises(RuntimeError):
+        await middleware.awrap_model_call(
+            ModelRequest(model=models["a/1"], messages=[HumanMessage(content="hello")]),
+            handler,
+        )
+
+    assert attempts == ["a/1", "b/2", "c/3"]
