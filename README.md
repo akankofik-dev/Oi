@@ -7,24 +7,24 @@ Asisten AI self-hosted yang lebih pintar — multi-user, multi-agent. Dashboard 
 ### Prerequisites
 
 - Linux (Ubuntu/Debian)
-- `git` dan `bash`
+- `curl` dan `bash`
 - Akses sudo untuk install dependensi sistem (Python, venv, `curl`, `git`) — skrip akan menginstall yang belum ada.
 
 ### 1. Install
 
 ```bash
-git clone https://github.com/akankofik-dev/Oi.git
-cd Oi
-bash install-oi.sh
+curl -sSL https://raw.githubusercontent.com/akankofik-dev/Oi/main/install-oi.sh | bash
 ```
 
 Skrip ini otomatis: install dependensi sistem → bikin venv di `~/oi-venv` → install semua dependency → inisialisasi → jalanin server.
 
-Untuk akses dari luar (VPS), ganti baris terakhir jadi:
+Untuk akses dari luar (VPS):
 
 ```bash
-OI_HOST=0.0.0.0 bash install-oi.sh
+curl -sSL https://raw.githubusercontent.com/akankofik-dev/Oi/main/install-oi.sh | OI_HOST=0.0.0.0 bash
 ```
+
+> Pengembang saja: `git clone https://github.com/akankofik-dev/Oi.git` — alternatif untuk pengembangan, bukan cara install utama.
 
 ### 2. Initialize
 
