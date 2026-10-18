@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from oi_harness import HarnessAgent, HarnessAgentConfig, HarnessAgentManager
+from oi.infra._compat import filter_init_kwargs
 from oi_harness.registry import AgentEntry
 from oi_harness.security.models import SecurityPolicy
 
@@ -629,10 +630,15 @@ class AgentManager:
         self._tool_guard_rules.ensure_seeded()
         providers = self._providers.build_harness_configs()
         self._harness_manager = HarnessAgentManager(
-            providers=providers,
-            langfuse=self._langfuse.harness_config(),
-            team_processor=self._team_processor,
-            file_logging=False,
+            **filter_init_kwargs(
+                HarnessAgentManager,
+                dict(
+                providers=providers,
+                langfuse=self._langfuse.harness_config(),
+                team_processor=self._team_processor,
+                file_logging=False,
+                ),
+            ),
         )
         if self._harness_manager is not None:
             self._harness_manager.team.bind_peer_enrich(self._refresh_peer_entry)
@@ -1376,10 +1382,15 @@ class AgentManager:
                                 cfg.providers, agent_config=cfg
                             )
                         temporary = MemoryRuntime(
-                            config=cfg,
-                            workspace_path=Path(cfg.workspace_dir),
-                            model_factory=factory,
-                            workspace=workspace,
+                            **filter_init_kwargs(
+                                MemoryRuntime,
+                                dict(
+                                config=cfg,
+                                workspace_path=Path(cfg.workspace_dir),
+                                model_factory=factory,
+                                workspace=workspace,
+                                ),
+                            ),
                         )
                         service = temporary.service
                     if service is None:

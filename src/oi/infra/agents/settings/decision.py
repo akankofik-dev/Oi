@@ -185,7 +185,10 @@ class DecisionSettingsStore:
         view = self.load()
         if not view.active:
             return None
-        from oi_harness.decision.config import DecisionConfig
+        try:
+            from oi_harness.decision.config import DecisionConfig
+        except ImportError:
+            return None
 
         return DecisionConfig(
             enabled=True,
@@ -212,7 +215,10 @@ class DecisionSettingsStore:
         target = (endpoint if endpoint is not None else view.endpoint).strip()
         if not target.startswith(("http://", "https://")):
             raise OiError(ErrorCode.SLASH_BAD_ARGS, "decision endpoint is required")
-        from oi_harness.decision.client import HttpDecisionClient
+        try:
+            from oi_harness.decision.client import HttpDecisionClient
+        except ImportError:
+            return {"ok": False, "error": "decision client is not available in the installed oi-harness"}
 
         saved_key = ""
         if api_key is None and (

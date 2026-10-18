@@ -171,9 +171,12 @@ class _OiLogFormatter(logging.Formatter):
         text = super().format(record)
         agent = getattr(record, "agent", None)
         if not agent:
-            from oi_harness.observability.logging import current_log_agent_id
+            try:
+                from oi_harness.observability.logging import current_log_agent_id
 
-            agent = current_log_agent_id()
+                agent = current_log_agent_id()
+            except ImportError:
+                agent = None
         if not agent:
             return text
         return f"{text} [agent={agent}]"
