@@ -1904,8 +1904,15 @@ def _apply_sqlite_migration(db: DatabasePool, version: int, path: Path) -> None:
             conn.execute("UPDATE _schema_version SET version = ?", (version,))
         return
     sql = path.read_text(encoding="utf-8")
-    with db.connect() as conn:
-        conn.executescript(sql)
+    try:
+        with db.connect() as conn:
+            conn.executescript(sql)
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "duplicate column name" in msg or "already exists" in msg:
+            pass
+        else:
+            raise
 
 
 def run_migrations(db: DatabasePool) -> None:
