@@ -117,7 +117,6 @@ async def reload_plugins(
     mgr = _plugin_manager(server)
     loaded = mgr.load_installed(install_deps=True)
     if server.app_runtime is not None:
-        await server.refresh_plugin_channels()
         await server.app_runtime.agent_registry.reload_all()
     return {
         "status": "ok",
@@ -151,7 +150,6 @@ async def install_plugin(
         ) from exc
     if server.app_runtime is not None:
         mgr.load_installed(install_deps=False)
-        await server.refresh_plugin_channels()
         await server.app_runtime.agent_registry.reload_all()
     return {
         "id": loaded.manifest.id,
@@ -194,7 +192,6 @@ async def upload_plugin(
         ) from exc
     if server.app_runtime is not None:
         mgr.load_installed(install_deps=False)
-        await server.refresh_plugin_channels()
         await server.app_runtime.agent_registry.reload_all()
     return {
         "id": loaded.manifest.id,
@@ -241,7 +238,6 @@ async def install_market_plugin(
         ) from exc
     # install_from_market already loads the plugin into the process registry.
     if server.app_runtime is not None:
-        await server.refresh_plugin_channels()
         await server.app_runtime.agent_registry.reload_all()
     return {
         "id": loaded.manifest.id,
@@ -293,7 +289,6 @@ async def patch_plugin(
     mgr = _plugin_manager(server)
     item = mgr.set_enabled(plugin_id, body.enabled)
     if server.app_runtime is not None:
-        await server.refresh_plugin_channels()
         await server.app_runtime.agent_registry.reload_all()
     return item
 
@@ -306,7 +301,6 @@ async def uninstall_plugin(
 ) -> dict[str, str]:
     _plugin_manager(server).uninstall(plugin_id)
     if server.app_runtime is not None:
-        await server.refresh_plugin_channels()
         await server.app_runtime.agent_registry.reload_all()
     return {"status": "ok", "id": plugin_id}
 

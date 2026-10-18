@@ -102,21 +102,21 @@ export default function LineageStrip({ agentId, atom }: Props) {
       ? beforeAssertion
       : null;
   const sourceLabel = correction
-    ? t("memory.lineage.originalContext", "原始来源上下文：")
+    ? t("memory.lineage.originalContext", "Konteks sumber asli:")
     : rawEvent?.event_type === "manual"
-    ? t("memory.lineage.manualEntry", "人工添加的记忆：")
-    : t("memory.lineage.conversationSource", "来源对话片段：");
+    ? t("memory.lineage.manualEntry", "Memori yang ditambahkan manual:")
+    : t("memory.lineage.conversationSource", "Kutipan percakapan sumber:");
 
   return (
     <div>
       {correction ? (
         <div style={correctionBox}>
           <Typography.Text strong style={{ fontSize: 12 }}>
-            ✏️ {t("memory.lineage.manualCorrection", "人工修正的记忆")}
+            ✏️ {t("memory.lineage.manualCorrection", "Memori yang dikoreksi manual")}
           </Typography.Text>
           {correctionText ? (
             <div style={{ marginTop: 4, fontSize: 12, color: "#595959" }}>
-              {t("memory.lineage.beforeCorrection", "修正前：{{assertion}}", {
+              {t("memory.lineage.beforeCorrection", "Sebelum koreksi: {{assertion}}", {
                 assertion: correctionText,
               })}
             </div>
@@ -147,7 +147,7 @@ export default function LineageStrip({ agentId, atom }: Props) {
           </div>
         ) : (
           <div style={{ marginTop: 4, fontSize: 12, color: "#8c8c8c" }}>
-            {t("memory.lineage.noOriginalContext", "没有可展示的原始来源")}
+            {t("memory.lineage.noOriginalContext", "Tidak ada sumber asli tersedia")}
           </div>
         )}
       </div>

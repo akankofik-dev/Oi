@@ -46,7 +46,6 @@ import {
 } from "../../../utils/agentError";
 import styles from "../index.module.less";
 import RemoteExpertHint from "../../Chat/components/RemoteExpertHint";
-import { expertDeleteConfirm } from "../../../utils/remoteExpert";
 import { isSharedExpertViewer } from "../../../utils/sharedExpert";
 import type { PublishedExpert } from "../../../api/modules/publishedExperts";
 import PublishTemplateButton from "./PublishTemplateButton";
@@ -291,7 +290,7 @@ export default function AgentExpertsTable({
 
   const columns: ColumnsType<OiAgent> = [
     {
-      title: t("experts.table.name", "名称"),
+      title: t("experts.table.name", "Nama"),
       dataIndex: "name",
       width: 160,
       fixed: isMobile ? undefined : "left",
@@ -325,7 +324,7 @@ export default function AgentExpertsTable({
       ),
     },
     {
-      title: t("experts.table.agentId", "专家 ID"),
+      title: t("experts.table.agentId", "ID Expert"),
       dataIndex: "agent_id",
       width: 100,
       ellipsis: true,
@@ -343,7 +342,7 @@ export default function AgentExpertsTable({
       ),
     },
     {
-      title: t("experts.table.state", "状态"),
+      title: t("experts.table.state", "Status"),
       dataIndex: "state",
       width: 200,
       align: "center",
@@ -398,20 +397,20 @@ export default function AgentExpertsTable({
       },
     },
     {
-      title: t("experts.table.description", "描述"),
+      title: t("experts.table.description", "Deskripsi"),
       dataIndex: "description",
       ellipsis: true,
       render: (desc: string | null | undefined) => desc || "—",
     },
     {
-      title: t("experts.table.model", "模型"),
+      title: t("experts.table.model", "Model"),
       dataIndex: "default_model",
       width: 140,
       ellipsis: true,
       render: (model: string | null | undefined) => model || "—",
     },
     {
-      title: t("experts.table.persona", "人格"),
+      title: t("experts.table.persona", "Persona"),
       dataIndex: "persona_mbti",
       width: 120,
       render: (value: string | null, row) => (
@@ -426,7 +425,7 @@ export default function AgentExpertsTable({
       ),
     },
     {
-      title: t("experts.table.actions", "操作"),
+      title: t("experts.table.actions", "Aksi"),
       key: "actions",
       width: 280,
       fixed: isMobile ? undefined : "right",
@@ -435,7 +434,6 @@ export default function AgentExpertsTable({
         const isTransient = TRANSIENT.has(state);
         const chatReady = isAgentChatReady(state);
         const isOwner = row.is_owner !== false;
-        const deleteConfirm = expertDeleteConfirm(row, t);
         return (
           <div className={styles.tableActions}>
             {isOwner && (
@@ -480,8 +478,8 @@ export default function AgentExpertsTable({
                   </button>
                 </Tooltip>
                 <Popconfirm
-                  title={deleteConfirm.title}
-                  description={deleteConfirm.description}
+                  title={t("experts.confirmDelete", { name: row.name })}
+                  description={t("experts.confirmDeleteHint")}
                   onConfirm={() => void handleDelete(row)}
                   okText={t("common.delete", "Delete")}
                   cancelText={t("common.cancel")}
@@ -527,7 +525,7 @@ export default function AgentExpertsTable({
                 onClick={() => handleOpenChat(row.agent_id)}
               >
                 <MessageSquare size={13} />
-                {t("experts.openChat", "对话")}
+                {t("experts.openChat", "Chat")}
                 <ChevronRight size={13} />
               </button>
             ) : isOwner &&
@@ -541,8 +539,8 @@ export default function AgentExpertsTable({
                 onClick={() => void handleToggle(row, true)}
               >
                 {state === "failed"
-                  ? t("experts.retryStart", "重试启动")
-                  : t("experts.startAgent", "启动")}
+                  ? t("experts.retryStart", "Coba mulai lagi")
+                  : t("experts.startAgent", "Mulai")}
               </button>
             ) : null}
           </div>

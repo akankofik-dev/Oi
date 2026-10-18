@@ -29,32 +29,6 @@ from oi.infra.history.trajectory.projector import _tool_result_fields
 logger = logging.getLogger(__name__)
 
 
-def _is_stream_error_part(part: dict[str, Any]) -> bool:
-    data = part.get("data")
-    if not isinstance(data, dict):
-        return False
-    extra = data.get("additional_kwargs")
-    return isinstance(extra, dict) and bool(extra.get(STREAM_ERROR_FLAG))
-
-
-def _foreign_turn_speaker(turn: dict[str, Any], chunk: dict[str, Any]) -> bool:
-    """True when a live frame belongs to a different agent than this history turn."""
-    owner = str(turn.get("agent_id") or "").strip()
-    if not owner:
-        return False
-    speaker = ""
-    for key in ("agent_id", "speaker_agent_id", "agent"):
-        raw = chunk.get(key)
-        if not isinstance(raw, str):
-            continue
-        value = raw.strip()
-        if not value or (key == "agent" and value == "agent"):
-            continue
-        speaker = value
-        break
-    return bool(speaker) and speaker != owner
-
-
 def _live_wire(message: Any) -> dict[str, Any] | None:
     item = live_message_input(message)
     if item is None:
@@ -162,8 +136,6 @@ class RecordingTracker(TurnHistoryTracker):
         return self._assistant["data"]  # type: ignore[no-any-return]
 
     def observe(self, chunk: dict[str, Any]) -> None:
-        if _foreign_turn_speaker(self.turn, chunk):
-            return
         super().observe(chunk)
         kind = chunk.get("type")
         if kind in ("state_snapshot", "state_update"):
@@ -315,13 +287,7 @@ class RecordingTracker(TurnHistoryTracker):
                     None,
                 )
             if role == "ai":
-                # A later checkpoint must not reuse the error row as a normal
-                # assistant message — that drops the failure from history.
-                if target is not None and _is_stream_error_part(target):
-                    target = None
-                assistants = [
-                    p for p in self._parts if p["type"] == "ai" and not _is_stream_error_part(p)
-                ]
+                assistants = [p for p in self._parts if p["type"] == "ai"]
                 if (
                     target is None
                     and not self._identified
@@ -483,3 +449,26 @@ class RecordingTracker(TurnHistoryTracker):
 async def flush_tracker(tracker: TurnHistoryTracker | None) -> None:
     if isinstance(tracker, RecordingTracker):
         await tracker.flush()
+    # Flag-gated mmap cache invalidation: history was (possibly) written, so
+    # drop any cached snapshot for this thread. Best-effort and non-fatal;
+    # identity when the flag is OFF.
+    # AUDIT NOTE (2026-10-14): invalidation runs on every flush (i.e. every
+    # ~5 chunks while batching). This is intentional, not a bug: the only
+    # reader of export_messages is the history API endpoint, which may be hit
+    # mid-turn — invalidating only at turn end would serve stale snapshots
+    # during streaming. The unlink itself is a cheap syscall; the cache stays
+    # useful for reads between turns.
+    try:
+        from oi.infra.optimizations import get_manager, invalidate_thread  # noqa: PLC0415
+
+        manager = get_manager()
+        if manager is not None and getattr(manager.flags, "mmap_history", False):
+            thread_id: Any = None
+            if isinstance(tracker, RecordingTracker):
+                turn = tracker.turn
+                if isinstance(turn, dict):
+                    thread_id = turn.get("thread_id")
+            if thread_id:
+                invalidate_thread(str(thread_id))
+    except Exception:
+        logger.exception("flush_tracker: mmap invalidate failed (non-fatal)")

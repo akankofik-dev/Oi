@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -38,7 +38,6 @@ from oi.infra.gateway.hitl.coordinator import (
     HitlChannelCoordinator,
     HitlSlashOutcome,
     HitlStreamContext,
-    iter_with_session_auto_approve,
 )
 from oi.infra.gateway.hitl.format import normalize_hitl_request
 from oi.infra.gateway.hitl.stream_compat import install_harness_hitl_compat
@@ -62,8 +61,8 @@ from oi.infra.gateway.process.harness_request import (
 from oi.infra.gateway.process.message_keys import (
     INBOUND_ATTACHMENTS_KEY,
     resolve_user_id_for_message,
+    sanitize_im_metadata,
     session_key_from_message,
-    session_metadata_from_message,
 )
 from oi.infra.gateway.process.stream_project import (
     StreamProjectionState,
@@ -86,7 +85,6 @@ from oi.infra.users.preferences import (
     get_preferred_model_from_json,
 )
 from oi.infra.utils.locale import resolve_user_locale
-from oi.infra.utils.turn_failure import log_failed_tool_results, log_turn_failure
 from oi.infra.utils.ulid import new_ulid
 
 if TYPE_CHECKING:
@@ -133,12 +131,6 @@ class _MessageEventSink(SlashSink):
 
     async def complete(self) -> None:
         pass
-
-
-@dataclass(frozen=True)
-class _ResolvedModelRoute:
-    model_ref: str | None
-    automatic: bool
 
 
 class GlobalProcessor:
@@ -192,7 +184,6 @@ class GlobalProcessor:
             user_repo=user_repo,
             thread_message_repo=thread_message_repo,
             gateway=gateway,
-            hitl_coordinator=self._hitl,
         )
 
     async def _begin_history(
@@ -266,6 +257,88 @@ class GlobalProcessor:
         """Rebind projection writes after a control-plane restore."""
         self._thread_message_repo = repo
         self.teams.replace_thread_message_repo(repo)
+
+    def _apply_auto_router(
+        self,
+        msg: InboundMessage,
+        *,
+        agent_id: str,
+        agent_row: Any | None,
+        user_id: Any,
+        session_key: str,
+    ) -> tuple[str, Any | None, str]:
+        """Flag-gated smart auto-router hook.
+
+        Returns ``(agent_id, agent_row, session_key)`` — unchanged unless the
+        ``auto_router`` flag is ON and ``auto_router_mode`` is ``"auto"`` with
+        a valid routing target. Mode ``"suggest"`` only logs the suggestion
+        (and records intent in the thread context store); it never switches.
+        With the default empty routing table and no latency data the router
+        always keeps the current agent, so the flag is a safe no-op until an
+        operator configures ``intent_agents`` or latency accrues.
+        """
+        from oi.infra.optimizations import get_manager  # noqa: PLC0415
+
+        try:
+            manager = get_manager()
+            if manager is None or not getattr(manager.flags, "auto_router", False):
+                return agent_id, agent_row, session_key
+            router = manager.auto_router
+            candidates = [agent_id]
+            try:
+                uid = int(user_id) if user_id else 0
+            except (TypeError, ValueError):
+                uid = 0
+            if uid:
+                try:
+                    rows = self._agent_repo.list_by_user(uid, include_disabled=False)
+                    for row in rows:
+                        rid = getattr(row, "id", None)
+                        if rid and str(rid) not in candidates:
+                            candidates.append(str(rid))
+                except Exception:
+                    logger.exception("auto_router: list_by_user failed; current agent only")
+            decision = router.route(
+                msg.text or "",
+                thread_id=session_key,
+                current_agent_id=agent_id,
+                candidates=candidates,
+            )
+            logger.info(
+                "auto_router: intent=%s mode=%s current=%s decision=%s reason=%s",
+                decision.intent.value,
+                decision.mode,
+                agent_id,
+                decision.agent_id,
+                decision.reason,
+            )
+            target = decision.agent_id
+            if router.mode != "auto" or not target or target == agent_id:
+                return agent_id, agent_row, session_key
+            if target not in candidates:
+                logger.warning(
+                    "auto_router: target %s not in user agents; keeping %s",
+                    target,
+                    agent_id,
+                )
+                return agent_id, agent_row, session_key
+            new_row = self._agent_repo.get(target)
+            if new_row is None:
+                logger.warning(
+                    "auto_router: target %s no longer exists; keeping %s", target, agent_id
+                )
+                return agent_id, agent_row, session_key
+            new_session_key = session_key_from_message(msg, agent_id=target)
+            logger.info(
+                "auto_router: switched agent %s -> %s (%s)",
+                agent_id,
+                target,
+                decision.reason,
+            )
+            return target, new_row, new_session_key
+        except Exception:
+            logger.exception("auto_router hook failed; keeping original agent")
+            return agent_id, agent_row, session_key
 
     def _agent_trajectory_enabled(self, agent_id: str, row: Any | None = None) -> bool:
         if self._trajectory_service is None:
@@ -531,23 +604,6 @@ class GlobalProcessor:
         needs_multimodal: bool,
         user_id: int = 0,
     ) -> str | None:
-        return self._resolve_harness_model_route(
-            agent_id,
-            thread_id,
-            meta,
-            needs_multimodal=needs_multimodal,
-            user_id=user_id,
-        ).model_ref
-
-    def _resolve_harness_model_route(
-        self,
-        agent_id: str,
-        thread_id: str,
-        meta: dict[str, Any] | None,
-        *,
-        needs_multimodal: bool,
-        user_id: int = 0,
-    ) -> _ResolvedModelRoute:
         """Per-turn ``model`` for harness requests.
 
         - Expert AUTO (no ``default_model`` on row): omit ``model`` → harness routes.
@@ -564,7 +620,6 @@ class GlobalProcessor:
             meta,
             thread_row.model_ref if thread_row is not None else None,
         )
-        automatic = False
         if model_ref and not providers.is_model_ref_usable(model_ref):
             model_ref = None
         if not model_ref:
@@ -579,22 +634,17 @@ class GlobalProcessor:
             preferred = get_preferred_model_from_json(
                 user_row.preferences_json if user_row is not None else None
             )
-            if preferred and self._agent_manager.is_auto_route_model_available(preferred):
+            if preferred and self._agent_manager.providers.is_model_ref_usable(preferred):
                 model_ref = preferred
-                automatic = True
         if not model_ref:
             fallback = self._agent_manager.resolve_fallback_model_ref()
             model_ref = fallback.strip() if isinstance(fallback, str) and fallback.strip() else None
-            automatic = model_ref is not None
         if not model_ref:
-            return _ResolvedModelRoute(None, automatic=True)
-        resolved = providers.resolve_model_for_multimodal_turn(
+            return None
+        return providers.resolve_model_for_multimodal_turn(
             model_ref,
             needs_multimodal=needs_multimodal,
         )
-        if resolved != model_ref:
-            automatic = True
-        return _ResolvedModelRoute(resolved, automatic=automatic)
 
     def _resolve_reasoning_overrides(
         self,
@@ -656,8 +706,16 @@ class GlobalProcessor:
             agent_owner_id=agent_row.user_id if agent_row is not None else None,
         )
         session_key = session_key_from_message(msg, agent_id=agent_id)
+        # Flag-gated auto-router hook (no-op unless the auto_router flag is ON).
+        agent_id, agent_row, session_key = self._apply_auto_router(
+            msg,
+            agent_id=agent_id,
+            agent_row=agent_row,
+            user_id=user_id,
+            session_key=session_key,
+        )
         channel_type = msg.channel_type or "unknown"
-        im_meta = session_metadata_from_message(msg)
+        im_meta = sanitize_im_metadata(msg)
 
         cmd = parse_slash(msg.text)
         locale = resolve_user_locale(
@@ -684,7 +742,6 @@ class GlobalProcessor:
                 outcome=slash_outcome,
                 history_factory=self._begin_history,
                 history_finalize=self._complete_resumed_history,
-                member_hitl=self.teams.deliver_member_hitl,
             ):
                 yield ev
             if slash_outcome.completed_turn:
@@ -733,12 +790,17 @@ class GlobalProcessor:
                         usage_tracker=usage_tracker,
                         history_tracker=history_tracker,
                         outcome=answer_outcome,
-                        member_hitl=self.teams.deliver_member_hitl,
                     ):
                         yield ev
                 finally:
+                    # Drain any batched history writes (no-op unless batch_db_writes
+                    # is ON). The HITL answer stream goes through _project_chunks
+                    # (maybe_batch_flush), so drop its batch bookkeeping here too.
+                    from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
                     from oi.infra.history.recorder import RecordingTracker  # noqa: PLC0415
+                    from oi.infra.optimizations import flush_batch  # noqa: PLC0415
 
+                    await flush_batch(history_tracker, flush_tracker)
                     if (
                         isinstance(history_tracker, RecordingTracker)
                         and answer_outcome.awaiting_more
@@ -794,14 +856,13 @@ class GlobalProcessor:
             media_backend=media_backend,
             locale=locale,
         )
-        model_route = self._resolve_harness_model_route(
+        model_ref = self._resolve_harness_model(
             agent_id,
             thread_id,
             None,
             user_id=user_id,
             needs_multimodal=content_blocks_need_vision(content),
         )
-        model_ref = model_route.model_ref
         mcp_servers = await self._resolve_turn_mcp_servers(
             agent_id=agent_id,
             user_id=user_id,
@@ -838,7 +899,6 @@ class GlobalProcessor:
             source=f"{msg.channel_type}/{msg.channel_id}",
             content=content,
             model=model_ref,
-            auto_route=model_route.automatic,
             message_kwargs=message_kwargs or None,
         )
         self.teams.stamp_host_runtime(request, agent_id)
@@ -863,10 +923,13 @@ class GlobalProcessor:
         yield MessageEvent.typing()
         stream_ok = False
         hitl_paused = False
-        failure_saved = False
+        persist_failed_turn = False
         usage_tracker = UsageTracker()
         history_tracker = await self._begin_history(agent_id, thread_id, request)
         projection_state = StreamProjectionState()
+        # Turn-start timestamp for the auto-router's latency tracker
+        # (flag-gated; recorded in the finally block below).
+        turn_started_at = time.monotonic()
         try:
             async for ev in project_stream(
                 self._agent_manager,
@@ -890,12 +953,11 @@ class GlobalProcessor:
             stream_ok = True
             hitl_paused = projection_state.hitl_paused
         except Exception as exc:
-            await self._record_stream_error(
-                user_id=user_id, agent_id=agent_id, thread_id=thread_id, exc=exc
-            )
+            await self._record_stream_error(user_id=user_id, agent_id=agent_id, exc=exc)
             message, error_code = _stream_error(exc, locale)
             if error_code:
                 message = f"[{error_code}] {message}"
+            persist_failed_turn = True
             history_tracker.observe(
                 {
                     "type": "error",
@@ -903,8 +965,6 @@ class GlobalProcessor:
                     **({"error_code": error_code} if error_code else {}),
                 }
             )
-            await self._persist_incomplete_turn(thread_id, history_tracker, title_source=msg.text)
-            failure_saved = True
             yield MessageEvent.error_event(message)
         else:
             if stream_ok and not hitl_paused:
@@ -923,22 +983,26 @@ class GlobalProcessor:
                         content=[TextContent(text=hint)],
                     )
         finally:
-            if not failure_saved and (not stream_ok and not hitl_paused):
+            # Drain any batched history writes (no-op unless batch_db_writes is
+            # ON). Also drops the tracker's batch bookkeeping so the
+            # BatchHistoryWriter does not retain finished IM trackers forever.
+            from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
+            from oi.infra.optimizations import (  # noqa: PLC0415
+                flush_batch,
+                record_turn_latency,
+            )
+
+            await flush_batch(history_tracker, flush_tracker)
+            # Feed the auto-router's latency tracker (no-op unless the
+            # auto_router flag is ON; never raises).
+            record_turn_latency(agent_id, time.monotonic() - turn_started_at)
+            if persist_failed_turn or (not stream_ok and not hitl_paused):
                 await self._persist_incomplete_turn(
                     thread_id, history_tracker, title_source=msg.text
                 )
-            elif not failure_saved:
+            else:
                 await self._finish_history(history_tracker, completed=stream_ok and not hitl_paused)
         yield MessageEvent.completed()
-
-    def cancel_agent_stream(self, agent_id: str, thread_id: str) -> None:
-        """Signal the harness to stop the active stream (mid-turn steer preemption).
-
-        The stream iterator ends cleanly (no error chunk); state stays at the
-        last completed superstep checkpoint.
-        """
-        if self._agent_manager is not None:
-            self._agent_manager.cancel_stream(agent_id, thread_id)
 
     # -- Raw harness-chunk stream (Dashboard WS, etc.) -------------------------
     # IM channels (DingTalk, Feishu, …) stream via __call__ → MessageEvent instead.
@@ -964,15 +1028,25 @@ class GlobalProcessor:
             return
 
         agent_row = self._agent_repo.get(agent_id)
-        team_host = is_team_agent(agent_row)
-        traj_on = self._agent_trajectory_enabled(agent_id, agent_row)
         user_id = resolve_user_id_for_message(
             msg,
             agent_owner_id=agent_row.user_id if agent_row is not None else None,
         )
         session_key = session_key_from_message(msg, agent_id=agent_id)
+        # Flag-gated auto-router hook (no-op unless the auto_router flag is ON).
+        # team_host/traj_on are (re)computed after it so a routed agent switch
+        # flows through consistently.
+        agent_id, agent_row, session_key = self._apply_auto_router(
+            msg,
+            agent_id=agent_id,
+            agent_row=agent_row,
+            user_id=user_id,
+            session_key=session_key,
+        )
+        team_host = is_team_agent(agent_row)
+        traj_on = self._agent_trajectory_enabled(agent_id, agent_row)
         channel_type = msg.channel_type or "unknown"
-        im_meta = session_metadata_from_message(msg)
+        im_meta = sanitize_im_metadata(msg)
         meta = msg.metadata or {}
         locale = resolve_user_locale(
             user_repo=self._user_repo,
@@ -999,7 +1073,6 @@ class GlobalProcessor:
                 outcome=slash_outcome,
                 history_factory=self._begin_history,
                 history_finalize=self._complete_resumed_history,
-                member_hitl=self.teams.deliver_member_hitl,
             ):
                 for frame in message_event_to_cli_chunks(ev):
                     yield _maybe_stamp_team_host(frame, agent_id, team_host)
@@ -1050,13 +1123,18 @@ class GlobalProcessor:
                         usage_tracker=usage_tracker,
                         history_tracker=history_tracker,
                         outcome=answer_outcome,
-                        member_hitl=self.teams.deliver_member_hitl,
                     ):
                         for frame in message_event_to_cli_chunks(ev):
                             yield _maybe_stamp_team_host(frame, agent_id, team_host)
                 finally:
+                    # Drain any batched history writes (no-op unless batch_db_writes
+                    # is ON). The HITL answer stream goes through _project_chunks
+                    # (maybe_batch_flush), so drop its batch bookkeeping here too.
+                    from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
                     from oi.infra.history.recorder import RecordingTracker  # noqa: PLC0415
+                    from oi.infra.optimizations import flush_batch  # noqa: PLC0415
 
+                    await flush_batch(history_tracker, flush_tracker)
                     if (
                         isinstance(history_tracker, RecordingTracker)
                         and answer_outcome.awaiting_more
@@ -1111,7 +1189,6 @@ class GlobalProcessor:
                 response_lines=slash_lines,
             )
             self._hitl.expire_pending_for_thread(thread_id, agent_id=agent_id, user_id=user_id)
-            self.teams.cancel_member_hitl(thread_id)
             self._touch_thread_after_turn(thread_id, msg.text)
             for line in slash_lines:
                 yield _maybe_stamp_team_host(
@@ -1140,7 +1217,6 @@ class GlobalProcessor:
             )
 
         self._hitl.expire_pending_for_thread(thread_id, agent_id=agent_id, user_id=user_id)
-        self.teams.cancel_member_hitl(thread_id)
         request = await self._build_dashboard_request(
             msg,
             agent_id=agent_id,
@@ -1150,6 +1226,9 @@ class GlobalProcessor:
             meta=meta,
         )
         history_tracker = await self._begin_history(agent_id, thread_id, request)
+        # Turn-start timestamp for the auto-router's latency tracker
+        # (flag-gated; recorded in the finally block below).
+        turn_started_at = time.monotonic()
         await self._observe_turn_start_context(
             agent_id=agent_id,
             thread_id=thread_id,
@@ -1174,7 +1253,7 @@ class GlobalProcessor:
         )
 
         stream_ok = False
-        failure_saved = False
+        persist_failed_turn = False
         harness_workspace = harness_workspace_for_agent(self._agent_manager, agent_id)
         usage_tracker = UsageTracker()
         # Align with IM stream_project: only push after a live tool_call this
@@ -1182,22 +1261,15 @@ class GlobalProcessor:
         saw_tool_call = False
         emitted_media_ids: set[str] = set()
         emitted_attachment_keys: set[str] = set()
-        emitted_tool_error_ids: set[str] = set()
 
         try:
-            async for chunk in iter_with_session_auto_approve(
-                self._agent_manager.stream(agent_id, request),
-                thread_id=thread_id,
-                policies=self._hitl.session_policies,
-                resume=lambda next_decisions: self._agent_manager.resume_hitl(
-                    agent_id, thread_id, next_decisions
-                ),
-            ):
+            async for chunk in self._agent_manager.stream(agent_id, request):
                 usage_tracker.observe(chunk)
                 history_tracker.observe(chunk)
                 from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
+                from oi.infra.optimizations import maybe_batch_flush  # noqa: PLC0415
 
-                await flush_tracker(history_tracker)
+                await maybe_batch_flush(history_tracker, flush_tracker)
                 self._observe_trajectory(
                     agent_id=agent_id,
                     thread_id=thread_id,
@@ -1229,13 +1301,6 @@ class GlobalProcessor:
                 if chunk.get("type") == "tool_call_chunk":
                     saw_tool_call = True
                 if chunk.get("type") == "tool_result":
-                    log_failed_tool_results(
-                        chunk,
-                        agent_id=agent_id,
-                        thread_id=thread_id,
-                        seen=emitted_tool_error_ids,
-                        live=saw_tool_call,
-                    )
                     if harness_workspace is not None:
                         chunk = await enrich_tool_result_with_backend(
                             chunk,
@@ -1266,24 +1331,32 @@ class GlobalProcessor:
                 yield _maybe_stamp_team_host(chunk, agent_id, team_host)
             stream_ok = True
         except Exception as exc:
-            await self._record_stream_error(
-                user_id=user_id, agent_id=agent_id, thread_id=thread_id, exc=exc
-            )
+            await self._record_stream_error(user_id=user_id, agent_id=agent_id, exc=exc)
             message, error_code = _stream_error(exc, locale)
             payload: dict[str, Any] = {"type": "error", "message": message}
             if error_code:
                 payload["error_code"] = error_code
             history_tracker.observe(payload)
-            await self._persist_incomplete_turn(thread_id, history_tracker, title_source=msg.text)
-            failure_saved = True
+            persist_failed_turn = True
             yield _maybe_stamp_team_host(payload, agent_id, team_host)
         finally:
+            # Drain any batched history writes (no-op unless batch_db_writes is ON).
+            from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
+            from oi.infra.optimizations import (  # noqa: PLC0415
+                flush_batch,
+                record_turn_latency,
+            )
+
+            await flush_batch(history_tracker, flush_tracker)
+            # Feed the auto-router's latency tracker (no-op unless the
+            # auto_router flag is ON; never raises).
+            record_turn_latency(agent_id, time.monotonic() - turn_started_at)
             self._finish_trajectory(thread_id=thread_id, usage=usage_tracker.usage, enabled=traj_on)
-            if not failure_saved and not stream_ok:
+            if persist_failed_turn or not stream_ok:
                 await self._persist_incomplete_turn(
                     thread_id, history_tracker, title_source=msg.text
                 )
-            elif not failure_saved:
+            else:
                 await self._finish_history(history_tracker, completed=stream_ok)
         if stream_ok:
             self._touch_thread_after_turn(thread_id, msg.text)
@@ -1308,51 +1381,31 @@ class GlobalProcessor:
         usage_tracker = UsageTracker()
         history_tracker = await self._begin_history(agent_id, thread_id, {}, resume=True)
         completed = False
-        failure_saved = False
+        persist_failed_turn = False
         traj_on = self._agent_trajectory_enabled(agent_id)
         team_host = is_team_agent(self._agent_manager.get_row(agent_id))
-        saw_tool_call = False
-        emitted_tool_error_ids: set[str] = set()
         try:
-            async for chunk in iter_with_session_auto_approve(
-                self._agent_manager.resume_hitl(
-                    agent_id,
-                    thread_id,
-                    decisions,
-                ),
-                thread_id=thread_id,
-                policies=self._hitl.session_policies,
-                resume=lambda next_decisions: self._agent_manager.resume_hitl(
-                    agent_id, thread_id, next_decisions
-                ),
+            async for chunk in self._agent_manager.resume_hitl(
+                agent_id,
+                thread_id,
+                decisions,
             ):
                 usage_tracker.observe(chunk)
                 history_tracker.observe(chunk)
                 from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
+                from oi.infra.optimizations import maybe_batch_flush  # noqa: PLC0415
 
-                await flush_tracker(history_tracker)
+                await maybe_batch_flush(history_tracker, flush_tracker)
                 self._observe_trajectory(
                     agent_id=agent_id,
                     thread_id=thread_id,
                     chunk=chunk,
                     enabled=traj_on,
                 )
-                if chunk.get("type") == "tool_call_chunk":
-                    saw_tool_call = True
-                if chunk.get("type") == "tool_result":
-                    log_failed_tool_results(
-                        chunk,
-                        agent_id=agent_id,
-                        thread_id=thread_id,
-                        seen=emitted_tool_error_ids,
-                        live=saw_tool_call,
-                    )
                 yield _maybe_stamp_team_host(chunk, agent_id, team_host)
             completed = True
         except Exception as exc:
-            await self._record_stream_error(
-                user_id=user_id, agent_id=agent_id, thread_id=thread_id, exc=exc
-            )
+            await self._record_stream_error(user_id=user_id, agent_id=agent_id, exc=exc)
             locale = resolve_user_locale(
                 user_repo=self._user_repo,
                 user_id=user_id,
@@ -1363,14 +1416,18 @@ class GlobalProcessor:
             if error_code:
                 payload["error_code"] = error_code
             history_tracker.observe(payload)
-            await self._persist_incomplete_turn(thread_id, history_tracker, title_source=None)
-            failure_saved = True
+            persist_failed_turn = True
             yield _maybe_stamp_team_host(payload, agent_id, team_host)
         finally:
+            # Drain any batched history writes (no-op unless batch_db_writes is ON).
+            from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
+            from oi.infra.optimizations import flush_batch  # noqa: PLC0415
+
+            await flush_batch(history_tracker, flush_tracker)
             self._finish_trajectory(thread_id=thread_id, usage=usage_tracker.usage, enabled=traj_on)
-            if not failure_saved and not completed:
+            if persist_failed_turn or not completed:
                 await self._persist_incomplete_turn(thread_id, history_tracker, title_source=None)
-            elif not failure_saved:
+            else:
                 await self._finish_history(history_tracker, completed=completed)
             if completed:
                 self._touch_thread_after_turn(thread_id, None)
@@ -1407,14 +1464,13 @@ class GlobalProcessor:
             media_backend=media_backend,
             locale=locale,
         )
-        model_route = self._resolve_harness_model_route(
+        model_ref = self._resolve_harness_model(
             agent_id,
             thread_id,
             meta,
             user_id=user_id,
             needs_multimodal=content_blocks_need_vision(content),
         )
-        model_ref = model_route.model_ref
         reasoning_overrides = self._resolve_reasoning_overrides(
             user_id=user_id,
             thread_id=thread_id,
@@ -1477,7 +1533,6 @@ class GlobalProcessor:
             source=source,
             content=content,
             model=model_ref,
-            auto_route=model_route.automatic,
             message_kwargs=message_kwargs or None,
             reasoning_overrides=reasoning_overrides,
         )
@@ -1686,25 +1741,11 @@ class GlobalProcessor:
             return None
         return merged
 
-    async def _record_stream_error(
-        self,
-        *,
-        user_id: int,
-        agent_id: str,
-        exc: Exception,
-        thread_id: str = "",
-    ) -> None:
+    async def _record_stream_error(self, *, user_id: int, agent_id: str, exc: Exception) -> None:
         from oi.infra.metrics import METRICS as _M  # noqa: PLC0415
 
         _M.inc("stream_errors_total")
-        log_turn_failure(
-            "stream",
-            detail=str(exc),
-            agent_id=agent_id,
-            thread_id=thread_id,
-            exc=exc,
-            level=logging.ERROR,
-        )
+        logger.exception("agent.stream failed for agent %s", agent_id)
         user_row = self._user_repo.get(user_id)
         actor = user_row.username if user_row else str(user_id)
         self._audit_repo.write(

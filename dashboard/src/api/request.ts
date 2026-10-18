@@ -1,6 +1,7 @@
 import { getApiUrl } from "./config";
 import i18n from "../i18n";
 import { markNavigatingAway } from "../utils/reloadOnStaleChunk";
+import { safeStorage } from "../utils/safeStorage";
 
 const AUTH_TOKEN_KEY = "auth_token";
 /** sessionStorage handoff for SSO redirects / popups (default = remember). */
@@ -46,12 +47,12 @@ export function isSetupRequiredKnown(): boolean {
 
 /** Stash the login-page "remember me" choice for SSO redirects / popups. */
 export function setRememberLoginPreference(remember: boolean): void {
-  sessionStorage.setItem(AUTH_REMEMBER_PREF_KEY, remember ? "1" : "0");
+  safeStorage.set("session", AUTH_REMEMBER_PREF_KEY, remember ? "1" : "0");
 }
 
 /** Read the stashed remember preference (defaults to true). */
 export function getRememberLoginPreference(): boolean {
-  return sessionStorage.getItem(AUTH_REMEMBER_PREF_KEY) !== "0";
+  return safeStorage.get("session", AUTH_REMEMBER_PREF_KEY) !== "0";
 }
 
 /**
@@ -61,8 +62,8 @@ export function getRememberLoginPreference(): boolean {
  */
 export function isSessionOnlyAuth(): boolean {
   return (
-    sessionStorage.getItem(AUTH_TOKEN_KEY) != null &&
-    localStorage.getItem(AUTH_TOKEN_KEY) == null
+    safeStorage.get("session", AUTH_TOKEN_KEY) != null &&
+    safeStorage.get("local", AUTH_TOKEN_KEY) == null
   );
 }
 
@@ -73,11 +74,11 @@ export function isSessionOnlyAuth(): boolean {
  */
 export function setAuthToken(token: string, remember: boolean = true) {
   if (remember) {
-    localStorage.setItem(AUTH_TOKEN_KEY, token);
-    sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    safeStorage.set("local", AUTH_TOKEN_KEY, token);
+    safeStorage.remove("session", AUTH_TOKEN_KEY);
   } else {
-    sessionStorage.setItem(AUTH_TOKEN_KEY, token);
-    localStorage.removeItem(AUTH_TOKEN_KEY);
+    safeStorage.set("session", AUTH_TOKEN_KEY, token);
+    safeStorage.remove("local", AUTH_TOKEN_KEY);
   }
   clearSetupRequired();
 }
@@ -85,18 +86,18 @@ export function setAuthToken(token: string, remember: boolean = true) {
 /** Get JWT token from localStorage or (session-only) sessionStorage. */
 export function getAuthToken(): string {
   return (
-    localStorage.getItem(AUTH_TOKEN_KEY) ||
-    sessionStorage.getItem(AUTH_TOKEN_KEY) ||
+    safeStorage.get("local", AUTH_TOKEN_KEY) ||
+    safeStorage.get("session", AUTH_TOKEN_KEY) ||
     ""
   );
 }
 
 /** Remove JWT token from both storages. */
 export function clearAuthToken() {
-  localStorage.removeItem(AUTH_TOKEN_KEY);
-  sessionStorage.removeItem(AUTH_TOKEN_KEY);
-  sessionStorage.removeItem(AUTH_REMEMBER_PREF_KEY);
-  localStorage.removeItem("oi:active-agent");
+  safeStorage.remove("local", AUTH_TOKEN_KEY);
+  safeStorage.remove("session", AUTH_TOKEN_KEY);
+  safeStorage.remove("session", AUTH_REMEMBER_PREF_KEY);
+  safeStorage.remove("local", "oi:active-agent");
   setActiveAgentId(null);
 }
 

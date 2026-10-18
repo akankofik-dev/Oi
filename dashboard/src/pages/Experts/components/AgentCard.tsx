@@ -37,7 +37,6 @@ import {
 } from "../../../utils/agentError";
 import styles from "../index.module.less";
 import RemoteExpertHint from "../../Chat/components/RemoteExpertHint";
-import { expertDeleteConfirm } from "../../../utils/remoteExpert";
 import { isSharedExpertViewer } from "../../../utils/sharedExpert";
 import type { PublishedExpert } from "../../../api/modules/publishedExperts";
 import PublishTemplateButton from "./PublishTemplateButton";
@@ -286,7 +285,6 @@ export const AgentCard = memo(function AgentCard({
   const chatReady = isAgentChatReady(localState);
   const sharedViewer = isSharedExpertViewer(agent);
   const isOwner = agent.is_owner !== false;
-  const deleteConfirm = expertDeleteConfirm(agent, t);
 
   return (
     <>
@@ -452,8 +450,8 @@ export const AgentCard = memo(function AgentCard({
               </Tooltip>
 
               <Popconfirm
-                title={deleteConfirm.title}
-                description={deleteConfirm.description}
+                title={t("experts.confirmDelete", { name: agent.name })}
+                description={t("experts.confirmDeleteHint")}
                 onConfirm={() => void handleDelete()}
                 okText={t("common.delete", "Delete")}
                 cancelText={t("common.cancel")}
@@ -502,7 +500,7 @@ export const AgentCard = memo(function AgentCard({
               onClick={handleOpenChat}
             >
               <MessageSquare size={13} />
-              {t("experts.openChat", "对话")}
+              {t("experts.openChat", "Chat")}
               <ChevronRight size={13} />
             </button>
           ) : isOwner &&
@@ -517,8 +515,8 @@ export const AgentCard = memo(function AgentCard({
               onClick={() => void handleToggle(true)}
             >
               {localState === "failed"
-                ? t("experts.retryStart", "重试启动")
-                : t("experts.startAgent", "启动")}
+                ? t("experts.retryStart", "Coba mulai lagi")
+                : t("experts.startAgent", "Mulai")}
             </button>
           ) : null}
         </div>

@@ -97,6 +97,21 @@ async def read_page(
 async def export_messages(
     archive: HistoryArchive, registry: Any, agent_id: str, thread_id: str
 ) -> list[Any]:
+    # Flag-gated mmap fast path: export_messages reads the *complete* thread
+    # history, which maps 1:1 onto MmapHistoryReader's full-list cache.
+    # NOTE: read_page() is intentionally NOT hooked — its limit/offset/cursor
+    # pagination merges segments + projection + legacy-checkpoint sources with
+    # source-specific cursor formats, which a full-list cache cannot serve
+    # without breaking cursor semantics. Identity when the flag is OFF.
+    from oi.infra.optimizations import default_cache_dir, get_manager  # noqa: PLC0415
+
+    manager = get_manager()
+    reader = None
+    if manager is not None and getattr(manager.flags, "mmap_history", False):
+        reader = manager.mmap_reader(str(default_cache_dir()))
+        cached = reader.read(thread_id)
+        if cached is not None:
+            return cached
     page = await read_page(archive, registry, agent_id, thread_id, limit=1000)
     messages = page["messages"]
     while page["has_more"]:
@@ -110,4 +125,7 @@ async def export_messages(
             cursor=page["next_cursor"],
         )
         messages = [*page["messages"], *messages]
+    if reader is not None:
+        # Populate the cache so the next export is served from RAM.
+        reader.store(thread_id, messages)
     return messages  # type: ignore[no-any-return]

@@ -16,7 +16,6 @@ import {
   List,
   Segmented,
   Spin,
-  Switch,
   Tag,
   Tooltip,
   Typography,
@@ -27,7 +26,6 @@ import { message } from "@/utils/antdMessage";
 import {
   ChevronLeft,
   Download,
-  FileDown,
   LayoutGrid,
   List as ListIcon,
   MoreHorizontal,
@@ -78,7 +76,6 @@ import {
   iconForName,
 } from "../Experts/components/iconForName";
 import { showConfirmModal } from "../../utils/confirmModal";
-import { saveBlobAsFile } from "../../utils/saveBlobAsFile";
 import { createDetailRequestGate } from "../../utils/detailRequestGate";
 import { PackageIcon } from "./PackageIcon";
 import { PackageSkillCard } from "./PackageSkillCard";
@@ -92,8 +89,6 @@ type PackageFormValues = {
   icon_name?: string;
   icon_url?: string;
   copy_policy?: "snapshot" | "lock" | "deny";
-  allow_download?: boolean;
-  can_download?: boolean;
 };
 
 const EMPTY_SKILL = "---\nname: \ndescription: \n---\n\n";
@@ -286,16 +281,6 @@ export default function SkillPackagesPage() {
 
   const canMutate = Boolean(selected && canMutatePackage(selected, user));
 
-  const exportPackage = async () => {
-    if (!selected || selected.skills.length === 0) return;
-    try {
-      const blob = await skillPackagesApi.exportPackage(selected.id);
-      await saveBlobAsFile(blob, `${selected.name.trim() || selected.id}.zip`);
-    } catch (error) {
-      message.error(apiErrorMessage(error, t("skills.exportSkillFailed"), t));
-    }
-  };
-
   const selectPackage = (item: SkillPackage) => {
     if (item.id !== selectedId) {
       setSelectedId(item.id);
@@ -342,7 +327,6 @@ export default function SkillPackagesPage() {
       icon_name: item.icon_name,
       icon_url: item.icon_url,
       copy_policy: item.copy_policy ?? "snapshot",
-      allow_download: item.allow_download !== false,
     });
     setPackageDrawerOpen(true);
   };
@@ -909,19 +893,6 @@ export default function SkillPackagesPage() {
                             />
                           </button>
                         </Tooltip>
-                        <button
-                          type="button"
-                          className={skillStyles.toolbarBtn}
-                          disabled={
-                            !selected ||
-                            selected.skills.length === 0 ||
-                            selected.can_download === false
-                          }
-                          onClick={() => void exportPackage()}
-                        >
-                          <FileDown size={14} />
-                          {t("skills.exportSkill")}
-                        </button>
                         {canMutate ? (
                           <>
                             <button
@@ -995,13 +966,6 @@ export default function SkillPackagesPage() {
           layout="vertical"
           className={styles.packageForm}
           requiredMark={false}
-          onValuesChange={(changed) => {
-            if (!("copy_policy" in changed)) return;
-            packageForm.setFieldValue(
-              "allow_download",
-              changed.copy_policy === "snapshot",
-            );
-          }}
         >
           {editingPackageId ? (
             <Form.Item
@@ -1019,16 +983,6 @@ export default function SkillPackagesPage() {
                   { value: "deny", label: t("skillPackages.copyPolicyDeny") },
                 ]}
               />
-            </Form.Item>
-          ) : null}
-          {editingPackageId ? (
-            <Form.Item
-              name="allow_download"
-              label={t("skillPackages.allowDownload")}
-              tooltip={t("skillPackages.allowDownloadHint")}
-              valuePropName="checked"
-            >
-              <Switch />
             </Form.Item>
           ) : null}
           <Form.Item
@@ -1097,14 +1051,6 @@ export default function SkillPackagesPage() {
           if (isMobile) setMobilePane("detail");
           setSkillsetHubOpen(false);
           message.success(t("skillPackages.created"));
-          if (pkg.skipped_skills && pkg.skipped_skills.length > 0) {
-            message.warning(
-              t("skillPackages.importedWithSkipped", {
-                count: pkg.skipped_skills.length,
-                skills: pkg.skipped_skills.join(", "),
-              }),
-            );
-          }
         }}
       />
 

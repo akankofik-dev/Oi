@@ -7,8 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi import APIRouter, Depends, Request
 
 from oi.api.common.agent import require_agent_row
 from oi.api.common.agent_workspace import resolve_agent_workspace_dir
@@ -100,16 +99,12 @@ def _require_thread(
 @router.get("/agents/{agent_id}/threads", summary="List threads")
 async def list_threads(
     agent_id: str,
-    limit: int = 50,
+    limit: int = 25,
     as_user: int | None = None,
     user: Any = Depends(current_user),
     server: Any = Depends(get_server),
 ) -> list[dict[str, Any]]:
-    """List conversation threads for an agent, including which thread is active for this user.
-
-    ``turn_active`` is true while a turn is still streaming; ``awaiting_user``
-    is true when the thread is paused on a HITL approval or question.
-    """
+    """List conversation threads for an agent, including which thread is active for this user."""
     require_agent_row(agent_id, user=user, as_user=as_user, server=server)
     thread_registry = server.app_runtime.gateway.thread_registry
     effective_uid = as_user if as_user is not None else user.id
@@ -118,10 +113,6 @@ async def list_threads(
         ThreadRegistry.dashboard_key(agent_id=agent_id, user_id=effective_uid)
     )
     workspace_dir = _agent_facing_workspace_dir(server, agent_id)
-    hub = server.app_runtime.gateway.ws_hub
-    awaiting_ids = server.app_runtime.gateway.processor.hitl_coordinator.store.pending_thread_ids(
-        agent_id=agent_id, user_id=effective_uid
-    )
     return [
         {
             "thread_id": r.thread_id,
@@ -139,8 +130,6 @@ async def list_threads(
             "conversation_mode": r.conversation_mode or "craft",
             "pending_plan_path": r.pending_plan_path,
             "hitl_policy": _hitl_policy_payload(r),
-            "turn_active": hub.is_turn_active(r.thread_id),
-            "awaiting_user": r.thread_id in awaiting_ids,
             **thread_artifacts_payload(
                 r.artifacts,
                 workspace_dir,
@@ -281,7 +270,6 @@ async def get_thread_context_usage(
     return {
         "max_tokens": breakdown.max_tokens,
         "used_tokens": breakdown.used_tokens,
-        "decision_saved": breakdown.decision_saved,
         "segments": [
             {"key": key, "tokens": breakdown.segments.get(key, 0)}
             for key in SEGMENT_KEYS
@@ -615,24 +603,19 @@ async def delete_thread(
     agent_id: str,
     thread_id: str,
     as_user: int | None = None,
-    compact: bool | None = Query(default=None),
     user: Any = Depends(current_user),
     server: Any = Depends(get_server),
-) -> Response:
-    """Remove a conversation thread, its checkpoint data, and its metadata.
+) -> None:
+    """Remove a conversation thread, its actual checkpoint data, and its metadata.
 
-    Checkpoint deletion runs first. ``CHECKPOINT_DELETE_FAILED`` leaves
-    the thread row in place so the caller can retry, instead of dropping
-    the only handle to data that is still on disk.
-
-    ``compact=true`` rebuilds the SQLite file before the response returns,
-    so the file can shrink immediately. The expert pauses while that runs.
-    ``compact=false`` only deletes the rows and compacts later, once the
-    expert is idle. Omitting ``compact`` keeps the previous empty 204.
+    Checkpoint deletion runs first: if it fails (as opposed to simply
+    finding nothing to delete — agent not running / no checkpointer),
+    the row is intentionally left in place so the thread stays visible
+    and the caller can retry, instead of orphaning undeleted data with
+    no remaining handle to it.
     """
     _require_thread(server, agent_id, thread_id, user, as_user)
-    registry = server.app_runtime.agent_registry
-    await registry.delete_thread_checkpoint(agent_id, thread_id)
+    await server.app_runtime.agent_registry.delete_thread_checkpoint(agent_id, thread_id)
     server.app_runtime.gateway.thread_registry.delete_thread(thread_id)
     runtime = getattr(server, "app_runtime", None)
     trajectory = getattr(runtime, "trajectory_service", None) if runtime is not None else None
@@ -641,18 +624,3 @@ async def delete_thread(
             trajectory.delete_for_thread(thread_id)
         except Exception:
             logger.exception("trajectory cascade delete failed thread=%s", thread_id)
-    if compact is None:
-        return Response(status_code=204)
-    compacted = False
-    scheduled = False
-    if compact:
-        compact_now = getattr(registry, "compact_agent_database", None)
-        if callable(compact_now):
-            compacted = bool(await compact_now(agent_id))
-        scheduled = not compacted
-    else:
-        schedule = getattr(registry, "schedule_store_reclaim", None)
-        if callable(schedule):
-            schedule(agent_id)
-            scheduled = True
-    return JSONResponse({"compacted": compacted, "scheduled": scheduled})

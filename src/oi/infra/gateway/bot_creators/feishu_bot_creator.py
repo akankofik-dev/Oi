@@ -146,9 +146,9 @@ def _send_greeting(
     app_id: str, app_secret: str, open_id: str, *, open_base: str, greeting: str
 ) -> None:
     _log_info("greeting", "Sending initial greeting message")
+    # Pakai default SSL context DENGAN verifikasi penuh (hostname + cert).
+    # Jangan pernah set check_hostname=False / CERT_NONE saat mengirim kredensial.
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
 
     token_payload = json.dumps({"app_id": app_id, "app_secret": app_secret}).encode()
     token_req = urllib.request.Request(
@@ -289,7 +289,7 @@ def cmd_init() -> None:
 
 
 def cmd_create(avatar_url: str = "", greeting: str = "") -> None:
-    platform_label = "Lark" if PLATFORM == "lark" else "飞书"
+    platform_label = "Lark" if PLATFORM == "lark" else "Feishu"
     _log_info("login", f"Starting {platform_label} scan-to-create flow...")
     try:
         finish = register_feishu_app(avatar_url=avatar_url, greeting=greeting)

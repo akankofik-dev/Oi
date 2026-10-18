@@ -3,6 +3,7 @@ import { Alert, App, Button, Empty, Form, Switch } from "antd";
 
 import { useTranslation } from "react-i18next";
 import PageShell from "../../../layouts/PageShell";
+import { useIsMobile } from "../../../hooks/useIsMobile";
 import { CardSkeleton } from "../../../components/Skeleton";
 import PeerOnlyRemoteAlert from "../../../components/PeerOnlyRemoteAlert";
 import { acpApi } from "../../../api/modules/acp";
@@ -368,10 +369,11 @@ export function ACPPanel({ agentId: agentIdProp }: ACPPanelProps = {}) {
 /** Standalone ACP page (sidebar Control entry). */
 export default function ACPPage() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   return (
     <PageShell
       title={t("pageShell.acp.title")}
-      subtitle={t("pageShell.acp.subtitle")}
+      subtitle={isMobile ? undefined : t("pageShell.acp.subtitle")}
       agentScoped
     >
       <ACPPanel />

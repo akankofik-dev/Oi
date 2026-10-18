@@ -13,6 +13,7 @@ import OauthProviderCard from "./OauthProviderCard";
 import { OAUTH_APP_PROVIDERS, type OauthAppKind } from "./oauthProviders";
 import ForbiddenPage from "../../../components/ForbiddenPage";
 import { useGatedSearchTabs } from "../../../hooks/useGatedSearchTabs";
+import { useIsMobile } from "../../../hooks/useIsMobile";
 import { USERS_TAB_PERMISSIONS } from "../../../utils/permissions";
 import feishuIcon from "../../../assets/channels/feishu.svg";
 import wecomIcon from "../../../assets/channels/wecom.svg";
@@ -106,6 +107,7 @@ function OauthTabPanel({ kind }: { kind: OauthAppKind }) {
 
 export default function AdminUsersPage() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const { allowedTabs, activeTab, forbidden, selectTab } = useGatedSearchTabs({
     tabs: TABS,
     tabPermissions: USERS_TAB_PERMISSIONS,
@@ -151,7 +153,7 @@ export default function AdminUsersPage() {
   return (
     <PageShell.Tabbed
       title={t("pageShell.adminUsers.title")}
-      subtitle={t("pageShell.adminUsers.subtitle")}
+      subtitle={isMobile ? undefined : t("pageShell.adminUsers.subtitle")}
       tabBar={
         <TabBar tabs={allowedTabs} activeKey={activeTab} onChange={selectTab} />
       }

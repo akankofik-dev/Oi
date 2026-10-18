@@ -1,138 +1,12 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Scale } from "lucide-react";
-import type { TFunction } from "i18next";
+import { ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Markdown from "../../../components/Markdown/LazyMarkdown";
-import type { DecisionNotice } from "../hooks/useChat";
 import type { AssistantTurnSplit } from "../utils/messageContent";
 import { countProcessStats } from "../utils/messageContent";
 import { ToolDetailsInline } from "./MessageBubble";
 import { useCollapseThinking } from "../hooks/useCollapseThinking";
 import styles from "../index.module.less";
-
-function decisionTitle(notice: DecisionNotice, t: TFunction): string {
-  return notice.model.trim()
-    ? t("chat.decisionBadgeNamed", {
-        model: notice.model.trim(),
-        defaultValue: "决策模型 {{model}} 已介入",
-      })
-    : t("chat.decisionBadge", { defaultValue: "决策模型已介入" });
-}
-
-function decisionPartLabel(
-  kind: DecisionNotice["parts"][number]["kind"],
-  t: TFunction,
-): string {
-  return t(
-    kind === "skill"
-      ? "chat.decisionSkill"
-      : kind === "tool"
-      ? "chat.decisionTool"
-      : kind === "member"
-      ? "chat.decisionMember"
-      : "chat.decisionResult",
-    {
-      defaultValue:
-        kind === "skill"
-          ? "技能"
-          : kind === "tool"
-          ? "工具"
-          : kind === "member"
-          ? "成员"
-          : "结果评估",
-    },
-  );
-}
-
-function decisionPartBody(
-  part: DecisionNotice["parts"][number],
-  t: TFunction,
-): string {
-  if (part.kept == null) {
-    return t("chat.decisionPartUnchanged", {
-      label: "",
-      defaultValue: "保持原样",
-    }).trim();
-  }
-  if (part.kept.length === 0) {
-    if (part.kind === "tool") {
-      return t("chat.decisionToolsBasic", { defaultValue: "只保留基本工具" });
-    }
-    if (part.kind === "member") {
-      return t("chat.decisionMembersNone", { defaultValue: "不再派工" });
-    }
-    return t("chat.decisionPartUnchanged", {
-      label: "",
-      defaultValue: "保持原样",
-    }).trim();
-  }
-  return part.kept
-    .map((item) =>
-      typeof item.score === "number"
-        ? `${item.name}  ${item.score.toFixed(2)}`
-        : item.name,
-    )
-    .join("\n");
-}
-
-/** Same chrome as a built-in tool row, for one decision-model pass. */
-export function DecisionToolRow({ notice }: { notice: DecisionNotice }) {
-  const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(true);
-  const title = decisionTitle(notice, t);
-  const parts = notice.empty ? [] : notice.parts;
-  return (
-    <div className={styles.inlineToolBlock}>
-      <button
-        type="button"
-        className={styles.inlineToolSummary}
-        onClick={() => setExpanded((open) => !open)}
-        aria-expanded={expanded}
-      >
-        <span
-          className={styles.inlineToolIcon}
-          aria-label={t("chat.decisionBadge", {
-            defaultValue: "决策模型已介入",
-          })}
-        >
-          <Scale size={14} strokeWidth={2.2} aria-hidden />
-        </span>
-        <span className={styles.inlineToolName}>{title}</span>
-        <span className={styles.inlineToolStatus}>
-          {t("common.done", { defaultValue: "完成" })}
-        </span>
-        <ChevronRight
-          size={14}
-          className={`${styles.inlineToolChevron} ${
-            expanded ? styles.inlineToolChevronOpen : ""
-          }`}
-        />
-      </button>
-      {expanded ? (
-        <div className={styles.inlineToolDetails}>
-          {notice.empty ? (
-            <div className={styles.inlineToolSection}>
-              <pre className={styles.inlineToolCode}>
-                {t("chat.decisionEmpty", { defaultValue: "本轮保持原样" })}
-              </pre>
-            </div>
-          ) : (
-            parts.map((part) => (
-              <div key={part.kind} className={styles.inlineToolSection}>
-                <span className={styles.inlineToolSectionLabel}>
-                  {decisionPartLabel(part.kind, t)}
-                </span>
-                <pre className={styles.inlineToolCode}>
-                  {decisionPartBody(part, t)}
-                </pre>
-              </div>
-            ))
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 interface AssistantProcessSummaryProps {
   /** Fold body: thinking + plain tools (pinned rich-UI tools excluded). */
@@ -164,8 +38,7 @@ function resolveLiveProcessHint(
       !step.message.toolData?.output,
   );
   if (runningTool && runningTool.kind === "tool") {
-    return t("chat.processRunningTools", {
-      defaultValue: "正在调用工具",
+    return t("chat.processRunningTools", { defaultValue: "Memanggil tool",
     });
   }
 
@@ -173,7 +46,7 @@ function resolveLiveProcessHint(
     (step) => step.kind === "thinking" && step.item.isStreaming,
   );
   if (thinkingLive) {
-    return t("chat.processThinkingLive", { defaultValue: "深度思考中" });
+    return t("chat.processThinkingLive", { defaultValue: "Thinking" });
   }
 
   // Tool finished, next tokens not yet — keep the fold "alive" so it does
@@ -183,7 +56,7 @@ function resolveLiveProcessHint(
     split.thinkings.length > 0 ||
     split.processSteps.length > 0;
   if (hasProcess) {
-    return t("chat.processOrganizing", { defaultValue: "整理结果中" });
+    return t("chat.processOrganizing", { defaultValue: "Mengorganisasi hasil" });
   }
 
   return null;
@@ -212,10 +85,6 @@ function AssistantProcessSummary({
     () => resolveLiveProcessHint(split, isStreaming, t),
     [split, isStreaming, t],
   );
-  const decisionOnly =
-    toolCount === 0 && thinkingCount === 0
-      ? split.processSteps.find((step) => step.kind === "decision")
-      : undefined;
 
   // Manual toggles hold until streaming or the display preference changes.
   // History stays collapsed, and generation respects the saved preference.
@@ -240,11 +109,7 @@ function AssistantProcessSummary({
     }
   }, [isStreaming, collapseThinking]);
 
-  if (toolCount === 0 && thinkingCount === 0) {
-    return decisionOnly?.kind === "decision" ? (
-      <DecisionToolRow notice={decisionOnly.notice} />
-    ) : null;
-  }
+  if (toolCount === 0 && thinkingCount === 0) return null;
 
   const summaryText =
     toolCount > 0 && thinkingCount > 0
@@ -296,9 +161,7 @@ function AssistantProcessSummary({
       {expanded && (
         <div className={styles.processSummaryBody}>
           {split.processSteps.map((step, idx) =>
-            step.kind === "decision" ? (
-              <DecisionToolRow key="decision" notice={step.notice} />
-            ) : step.kind === "thinking" ? (
+            step.kind === "thinking" ? (
               <div
                 key={`${step.item.messageId}-thinking-${idx}`}
                 className={styles.processThinkingItem}

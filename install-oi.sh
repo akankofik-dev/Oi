@@ -427,7 +427,7 @@ _step_end
 printf '  %bInstalling packages%b\n' "$_C_DIM" "$_C_RESET" >&2
 _pkg "oi-memory"      "$_C_MAUVE" "oi-memory @ git+https://github.com/akankofik-dev/oi-memory.git@v1.0.0"
 _pkg "oi-gateway"     "$_C_TEAL"  "oi-gateway @ git+https://github.com/akankofik-dev/oi-gateway.git@v1.0.0"
-_pkg "oi-browser"     "$_C_BLUE"  --force-reinstall "oi-browser @ git+https://github.com/akankofik-dev/oi-browser.git@v1.0.2"
+_pkg "oi-browser"     "$_C_BLUE"  "oi-browser @ git+https://github.com/akankofik-dev/oi-browser.git@v1.0.2"
 # oi-harness: depend ke oi-memory & oi-browser (ga ada di PyPI)
 # Install --no-deps, lalu install deps PyPI-nya manual
 _pkg "oi-harness"     "$_C_AMBER" --no-deps "oi-harness @ git+https://github.com/akankofik-dev/oi-harness.git@v1.0.7"
@@ -465,37 +465,6 @@ else
     _STEP_HINT="Gagal install oi dari GitHub branch $OI_BRANCH."
     _pkg "oi ($OI_BRANCH)" "$_C_GREEN" --force-reinstall "oi @ git+https://github.com/akankofik-dev/Oi.git@$OI_BRANCH"
     _STEP_HINT=""
-fi
-
-# [3b/5] Pulihkan Snap Chromium kalau /tmp/snap-private-tmp basi (recovery saja).
-# Direktori /tmp/snap-private-tmp yang basi membuat Chromium dari Snap gagal start
-# ("unexpected ownership / permissions", returncode=1). chown/chmod TERBUKTI tidak
-# mempan di VPS - yang mempan: hapus direktori basi + restart snapd, lalu Snap
-# membuatnya ulang dengan benar. Hanya jalan bila snapd dan snap chromium ada,
-# direktori basi ada, DAN `chromium --version` gagal; selain itu tidak disentuh.
-# Idempoten dan tidak menggagalkan installer.
-if command -v snap >/dev/null 2>&1 \
-    && snap list 2>/dev/null | grep -q '^chromium[[:space:]]' \
-    && [ -d /tmp/snap-private-tmp ]; then
-    _chromium_bin="$(command -v chromium 2>/dev/null || command -v chromium-browser 2>/dev/null || echo /snap/bin/chromium)"
-    if ! "$_chromium_bin" --version >/dev/null 2>&1; then
-        _snap_fix_sudo=""
-        if [ "$(id -u)" -ne 0 ]; then _snap_fix_sudo="sudo"; fi
-        printf ' %b%s%b /tmp/snap-private-tmp basi - memulihkan Snap Chromium%s\n' \
-            "$_C_AMBER" "$_G_ACTIVE" "$_C_RESET" "$_G_ELL" >&2
-        $_snap_fix_sudo rm -rf /tmp/snap-private-tmp || true
-        if command -v systemctl >/dev/null 2>&1; then
-            $_snap_fix_sudo systemctl restart snapd >>"$OI_LOG" 2>&1 || true
-            sleep 3
-        fi
-        if "$_chromium_bin" --version >/dev/null 2>&1; then
-            printf ' %b%s%b Snap Chromium pulih.\n' "$_C_GREEN" "$_G_OK" "$_C_RESET" >&2
-        else
-            printf ' %b%s%b Chromium masih gagal start - browser Oi mungkin tidak jalan.\n' \
-                "$_C_AMBER" "$_G_FAIL" "$_C_RESET" >&2
-            printf ' %bCek manual: /snap/bin/chromium --version%b\n' "$_C_DIM" "$_C_RESET" >&2
-        fi
-    fi
 fi
 
 # [4/5] Init (skip kalau sudah ada)

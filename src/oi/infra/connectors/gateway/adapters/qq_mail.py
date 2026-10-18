@@ -59,7 +59,9 @@ TOOLS: list[dict[str, Any]] = [
     },
 ]
 
-_IMAP_ID_ARGS = '("name" "Oi" "version" "1.0.0" "vendor" "Oi" "support-email" "support@oi.local")'
+_IMAP_ID_ARGS = (
+    '("name" "Oi" "version" "1.0.0" "vendor" "Oi" "support-email" "support@oi.local")'
+)
 
 # imaplib 默认未注册 ID 命令。
 imaplib.Commands["ID"] = ("AUTH", "NONAUTH", "SELECTED")

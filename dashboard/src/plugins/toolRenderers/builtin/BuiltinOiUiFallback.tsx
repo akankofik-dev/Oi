@@ -26,22 +26,19 @@ export function BuiltinOiUiFallback({
   textFallback,
   status,
   output,
-  annotateMissingPlugin = false,
-}: ToolRenderProps & { annotateMissingPlugin?: boolean }) {
+}: ToolRenderProps) {
   const { t } = useTranslation();
   if (isSilentPluginUiData(data)) return null;
   const obj =
     data && typeof data === "object" && !Array.isArray(data)
       ? (data as Record<string, unknown>)
       : null;
-  const showReturnedText = annotateMissingPlugin && Boolean(textFallback);
-  const title = showReturnedText
-    ? displayName || toolName || "Tool result"
-    : (obj && typeof obj.title === "string" && obj.title) ||
-      textFallback ||
-      displayName ||
-      toolName ||
-      "Tool result";
+  const title =
+    (obj && typeof obj.title === "string" && obj.title) ||
+    textFallback ||
+    displayName ||
+    toolName ||
+    "Tool result";
   const entries = obj ? Object.entries(obj).filter(([k]) => k !== "title") : [];
   const running = status === "running";
 
@@ -67,19 +64,7 @@ export function BuiltinOiUiFallback({
         {toolName || "tool"}
         {running ? ` · ${t("common.running", "Running")}` : ""}
       </div>
-      {annotateMissingPlugin ? (
-        <div
-          data-oi-plugin-ui-note=""
-          style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}
-        >
-          {t("chat.pluginUiNotInstalled")}
-        </div>
-      ) : null}
-      {showReturnedText ? (
-        <div style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>
-          {textFallback}
-        </div>
-      ) : entries.length > 0 ? (
+      {entries.length > 0 ? (
         <dl style={{ margin: 0, fontSize: 13 }}>
           {entries.map(([k, v]) => (
             <div key={k} style={{ marginBottom: 4 }}>

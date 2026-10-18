@@ -122,7 +122,7 @@ function ThemedApp() {
   return (
     <ConfigProvider
       theme={themeConfig}
-      prefixCls="octop"
+      prefixCls="oi"
       locale={antdLocale}
       spin={{ indicator: <OiSpinner /> }}
     >

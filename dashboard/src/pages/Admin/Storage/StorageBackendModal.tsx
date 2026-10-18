@@ -378,7 +378,7 @@ export function StorageBackendDrawer({
             loading={probing}
             onClick={() => void handleProbe()}
           >
-            {t("storage.probe", "探测")}
+            {t("storage.probe", "Uji")}
           </Button>
           <Button
             type="primary"

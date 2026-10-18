@@ -9,7 +9,7 @@ from typing import Any
 
 from oi.infra.utils.locale import Locale, normalize_locale
 
-_FALLBACK_LOCALE: Locale = "en"
+_FALLBACK_LOCALE: Locale = "id"
 
 
 def _resolve_node(table: dict[str, Any], key: str) -> str | None:
@@ -24,7 +24,7 @@ def _resolve_node(table: dict[str, Any], key: str) -> str | None:
 @lru_cache(maxsize=1)
 def _load_all() -> dict[Locale, dict[str, Any]]:
     out: dict[Locale, dict[str, Any]] = {}
-    for loc in ("en", "zh"):
+    for loc in ("en", "id", "zh"):
         raw = resources.files("oi.i18n").joinpath(f"{loc}.json").read_text(encoding="utf-8")
         out[loc] = json.loads(raw)
     return out
@@ -41,8 +41,8 @@ def lookup(key: str, locale: str | Locale) -> str | None:
     return None
 
 
-def tr(key: str, locale: str | Locale = "en", **kwargs: object) -> str:
-    """Resolve *key* (e.g. ``slash.help.title``) for *locale*, fallback to ``en``."""
+def tr(key: str, locale: str | Locale = "id", **kwargs: object) -> str:
+    """Resolve *key* (e.g. ``slash.help.title``) for *locale*, fallback to ``id``."""
     text = lookup(key, locale)
     if text is None:
         raise KeyError(key)
@@ -60,5 +60,5 @@ def flatten_keys(table: dict[str, Any], prefix: str = "") -> set[str]:
     return keys
 
 
-def all_keys_for_locale(locale: Locale = "en") -> set[str]:
+def all_keys_for_locale(locale: Locale = "id") -> set[str]:
     return flatten_keys(_load_all()[locale])

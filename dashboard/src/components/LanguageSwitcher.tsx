@@ -6,13 +6,18 @@ import { preferencesApi } from "../api/modules/preferences";
 import { applyUserLocale } from "../utils/locale";
 
 const LANGUAGES = [
+  { key: "id", label: "ID" },
   { key: "zh", label: "中" },
   { key: "en", label: "EN" },
 ];
 
 export default function LanguageSwitcher() {
   const { i18n, t } = useTranslation();
-  const currentLanguage = i18n.language?.startsWith("zh") ? "zh" : "en";
+  const currentLanguage = i18n.language?.startsWith("zh")
+    ? "zh"
+    : i18n.language?.startsWith("id")
+      ? "id"
+      : "en";
 
   const changeLanguage = async (lang: string) => {
     try {
@@ -20,7 +25,7 @@ export default function LanguageSwitcher() {
       await applyUserLocale(prefs.locale);
     } catch {
       message.error(
-        t("language.saveFailed", "Failed to save language preference"),
+        t("language.saveFailed", "Gagal menyimpan preferensi bahasa"),
       );
     }
   };
@@ -41,7 +46,9 @@ export default function LanguageSwitcher() {
         return (
           <Tooltip
             key={key}
-            title={key === "zh" ? "简体中文" : "English"}
+            title={
+              key === "zh" ? "简体中文" : key === "id" ? "Bahasa Indonesia" : "English"
+            }
             mouseEnterDelay={0.4}
           >
             <button

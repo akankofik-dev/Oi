@@ -14,6 +14,7 @@ import { envsApi } from "../../../api/modules/env";
 import api from "../../../api";
 import { customProviderLogo, getProviderLogo } from "../../../assets/providers";
 import { apiErrorMessage } from "../../../utils/apiError";
+import { TabPanelHeader } from "../AdvancedSettings/TabPanelHeader";
 import styles from "./index.module.less";
 
 const { Text } = Typography;
@@ -328,7 +329,11 @@ export default function SearchConfigPage() {
 
   return (
     <>
-      <p className={styles.intro}>{t("advancedSettings.search.desc")}</p>
+      <TabPanelHeader
+        icon={<Search size={22} />}
+        title={t("models.searchModelsTab")}
+        description={t("advancedSettings.search.desc")}
+      />
 
       <div
         className={`${styles.status} ${activeSource ? styles.statusOk : ""}`}

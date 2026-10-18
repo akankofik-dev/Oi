@@ -1,4 +1,4 @@
-import type { ChatMessage, DecisionNotice } from "../hooks/useChat";
+import type { ChatMessage } from "../hooks/useChat";
 import { isBrowserToolName, isWriteToolName } from "../constants";
 
 const THINKING_TAG_RE = /<(?:think|thinking)>[\s\S]*?<\/(?:think|thinking)>/gi;
@@ -63,16 +63,13 @@ export interface ThinkingProcessItem {
 
 export type ProcessStep =
   | { kind: "thinking"; item: ThinkingProcessItem }
-  | { kind: "tool"; message: ChatMessage }
-  | { kind: "decision"; notice: DecisionNotice };
+  | { kind: "tool"; message: ChatMessage };
 
 export interface AssistantTurnSplit {
   tools: ChatMessage[];
   thinkings: ThinkingProcessItem[];
   processSteps: ProcessStep[];
   answerMessage: ChatMessage | null;
-  /** Stream failures stay out of the answer so the error box is only the error. */
-  errorMessages?: ChatMessage[];
 }
 
 function joinAnswerParts(parts: string[]): string {
@@ -124,11 +121,6 @@ export function splitAssistantTurn(
   const thinkings: ThinkingProcessItem[] = [];
   const processSteps: ProcessStep[] = [];
   const textParts: string[] = [];
-  const errorMessages: ChatMessage[] = [];
-  const decision = messages.find((item) => item.decision)?.decision;
-  if (decision) {
-    processSteps.push({ kind: "decision", notice: decision });
-  }
   let answerTemplate: ChatMessage | null = null;
   let answerStreaming = false;
 
@@ -147,16 +139,6 @@ export function splitAssistantTurn(
     if (msg.toolData) {
       tools.push(msg);
       processSteps.push({ kind: "tool", message: msg });
-      continue;
-    }
-    if (msg.status === "error") {
-      const errorText =
-        textContent.trim() || msg.errorInfo?.message?.trim() || "";
-      errorMessages.push({
-        ...msg,
-        content: errorText,
-        contentBlocks: undefined,
-      });
       continue;
     }
     if (textContent.trim()) {
@@ -192,7 +174,7 @@ export function splitAssistantTurn(
         }
       : null;
 
-  return { tools, thinkings, processSteps, answerMessage, errorMessages };
+  return { tools, thinkings, processSteps, answerMessage };
 }
 
 export function toAnswerOnlyMessage(message: ChatMessage): ChatMessage {

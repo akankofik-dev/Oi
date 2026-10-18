@@ -21,20 +21,17 @@ _FETCH_MODELS_TIMEOUT_S = 30.0
 _EMBEDDING_PROBE_TEXT = "ping"
 
 
-def parse_provider_extra(row: Any) -> dict[str, Any]:
-    """Return the provider ``extra_json`` object, or ``{}`` when missing / invalid."""
+def provider_headers(row: Any) -> dict[str, str]:
     raw = getattr(row, "extra_json", None)
-    if not isinstance(raw, str) or not raw.strip():
+    if not raw:
         return {}
     try:
         extra = json.loads(raw)
     except json.JSONDecodeError:
         return {}
-    return extra if isinstance(extra, dict) else {}
-
-
-def provider_headers(row: Any) -> dict[str, str]:
-    headers = parse_provider_extra(row).get("headers")
+    if not isinstance(extra, dict):
+        return {}
+    headers = extra.get("headers")
     return dict(headers) if isinstance(headers, dict) else {}
 
 
@@ -69,8 +66,6 @@ def build_probe_chat_model(row: Any, *, model_id: str | None = None) -> Any:
             kwargs["default_headers"] = dict(headers)
         return ChatOpenAI(**kwargs)
 
-    from oi.infra.agents.providers.store import resolve_provider_stream_usage
-
     provider = ProviderConfig(
         id=row.name,
         name=row.name,
@@ -78,10 +73,6 @@ def build_probe_chat_model(row: Any, *, model_id: str | None = None) -> Any:
         base_url=base_url,
         api_key=row.api_key or "",
         headers=headers,
-        stream_usage=resolve_provider_stream_usage(
-            provider_name=row.name,
-            extra=parse_provider_extra(row),
-        ),
     )
     return build_chat_model(provider, model)
 

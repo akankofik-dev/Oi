@@ -14,8 +14,6 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from oi_harness.plugins.registry import PluginRegistry
-
 from oi.config import OiConfig, load_config
 from oi.infra.agents.experts.catalog import ExpertCatalog, default_library_root
 from oi.infra.agents.manager import AgentManager
@@ -34,7 +32,6 @@ from oi.infra.setup.password_file import WIZARD_FILE_NAME
 from oi.infra.setup.wizard_tokens import WizardTokenStore
 from oi.infra.users.manager import UserManager
 from oi.infra.utils.paths import PathLayout
-from oi.infra.utils.process_resources import ensure_nofile_limit
 
 if TYPE_CHECKING:
     from oi.infra.auth.ldap.service import LdapAuthService
@@ -164,24 +161,6 @@ def _parse_log_max_bytes() -> int:
         return DEFAULT_LOG_MAX_BYTES
 
 
-class _OiLogFormatter(logging.Formatter):
-    """Process log line, with the active harness agent id when one is in scope."""
-
-    def format(self, record: logging.LogRecord) -> str:
-        text = super().format(record)
-        agent = getattr(record, "agent", None)
-        if not agent:
-            try:
-                from oi_harness.observability.logging import current_log_agent_id
-
-                agent = current_log_agent_id()
-            except ImportError:
-                agent = None
-        if not agent:
-            return text
-        return f"{text} [agent={agent}]"
-
-
 def _build_log_handler(
     log_path: Path,
     retention_days: int,
@@ -201,7 +180,7 @@ def _build_log_handler(
     )
     # Rotated files get a date suffix, e.g. oi.log.2026-07-16
     handler.suffix = "%Y-%m-%d"
-    handler.setFormatter(_OiLogFormatter("%(asctime)s %(levelname)-5s %(name)s — %(message)s"))
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-5s %(name)s — %(message)s"))
     return handler
 
 
@@ -357,10 +336,6 @@ class OiServer:
 
         apply_env_file(env_file_path(self.paths.root))
         self._setup_logging()
-        ensure_nofile_limit()
-        from oi.infra.backend.grep_safety import install_safe_grep_fallback  # noqa: PLC0415
-
-        install_safe_grep_fallback()
         config = ensure_mobile_capabilities_probed(self.paths.config)
         self.config = config
 
@@ -378,7 +353,6 @@ class OiServer:
         )
         self.plugin_manager.seed_bundled()
         self.plugin_manager.load_installed(install_deps=True)
-        self._apply_plugin_channels()
 
         import time  # noqa: PLC0415
 
@@ -441,6 +415,12 @@ class OiServer:
 
         configure_browser_idle_timeout(config.browser_idle_timeout_minutes)
 
+        # Chat-pipeline optimizations: stores feature flags only; modules are
+        # built lazily on first use, so this is a no-op when all flags are OFF.
+        from oi.infra.optimizations import configure as configure_optimizations  # noqa: PLC0415
+
+        configure_optimizations(config.chat)
+
         registry = AgentManager(
             repos=self.services.repos,
             paths=self.paths,
@@ -448,6 +428,15 @@ class OiServer:
             expert_catalog=self.expert_catalog,
             plugin_manager=self.plugin_manager,
         )
+
+        # Provider pre-warming (flag-gated): warm the harness model cache in a
+        # background task so the first real turn never pays client-construction
+        # cost. No-op unless the provider_prewarm flag is ON; never blocks boot.
+        from oi.infra.optimizations import get_manager as _get_opt_manager  # noqa: PLC0415
+
+        _opt_manager = _get_opt_manager()
+        if _opt_manager is not None:
+            _opt_manager.schedule_prewarm(registry)
 
         from oi.infra.history.trajectory.live import TrajectoryLiveBus  # noqa: PLC0415
         from oi.infra.history.trajectory.service import TrajectoryService  # noqa: PLC0415
@@ -546,7 +535,6 @@ class OiServer:
         registry.set_proactive_scheduler(proactive_scheduler)
 
         await registry.boot()
-        registry.schedule_idle_reclaim_sweep()
         await gateway.refresh_media_backends()
 
         user_mgr = UserManager(self.services)
@@ -592,20 +580,8 @@ class OiServer:
             history_archive=history_archive,
             bridge_manager=bridge_mgr,
         )
-        from oi.infra.knowledge.gate import (  # noqa: PLC0415
-            warn_if_local_embedding_deps_missing,
-        )
         from oi.infra.knowledge.jobs import resume_pending_index_jobs  # noqa: PLC0415
-        from oi.infra.knowledge.ocr import warn_if_local_ocr_deps_missing  # noqa: PLC0415
 
-        warn_if_local_embedding_deps_missing(
-            self.services.settings_repo.get,
-            self.services.provider_repo,
-        )
-        warn_if_local_ocr_deps_missing(
-            self.services.settings_repo.get,
-            self.services.provider_repo,
-        )
         resume_pending_index_jobs(self.services)
 
         # Resume Bridge links that opted into auto-reconnect (best-effort).
@@ -614,46 +590,6 @@ class OiServer:
                 await bridge_mgr.resume_auto_connections()
 
         asyncio.create_task(_resume_bridges(), name="bridge-auto-resume")
-
-    async def refresh_plugin_channels(self) -> None:
-        """Reconcile only changed kinds and report registration failures to callers."""
-        from oi.infra.errors import ErrorCode, OiError
-        from oi.infra.gateway.plugin_channels import (
-            changed_plugin_channel_kinds,
-            current_registration_errors,
-        )
-
-        changed = changed_plugin_channel_kinds(PluginRegistry())
-        if self.app_runtime is not None:
-            await self.app_runtime.gateway.reload_plugin_channels(
-                self._apply_plugin_channels, kinds=changed
-            )
-        else:
-            self._apply_plugin_channels()
-        errors = current_registration_errors()
-        if errors:
-            raise OiError(
-                ErrorCode.PLUGIN_INSTALL_FAILED,
-                "plugin channel registration failed",
-                details={"registration_errors": errors},
-            )
-
-    def _apply_plugin_channels(self) -> None:
-        """Register plugin-contributed channel kinds with the gateway.
-
-        Called after every plugin load/reload so channel kinds are always in
-        sync with the plugin registry. Best-effort: a failure in one plugin's
-        registration never blocks boot (already handled inside
-        ``apply_plugin_channels``).
-        """
-        if self.plugin_manager is None:
-            return
-        try:
-            from oi.infra.gateway.plugin_channels import apply_plugin_channels  # noqa: PLC0415
-
-            apply_plugin_channels(registry=PluginRegistry())
-        except Exception:
-            logger.exception("applying plugin channel kinds failed")
 
     def _emit_wizard_password(self, *, user_count: int) -> None:
         config = self.config

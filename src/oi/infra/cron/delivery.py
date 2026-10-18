@@ -18,7 +18,6 @@ from oi.infra.history.projection import TurnHistoryTracker, message_inputs
 from oi.infra.knowledge.default_open import stamp_turn_knowledge_config
 from oi.infra.utils.llm_text import strip_thinking
 from oi.infra.utils.locale import resolve_user_locale
-from oi.infra.utils.turn_failure import log_failed_tool_results
 from oi.infra.utils.ulid import new_ulid
 
 if TYPE_CHECKING:
@@ -123,7 +122,6 @@ class CronDeliveryService:
             projected = message_inputs(appended, dedupe_missing_ids=True)
 
         self._project_best_effort(session.thread_id, projected)
-        self._remember_thread_title(session, command)
         await self._gateway.push_session_text(
             session,
             command.prompt,
@@ -141,8 +139,6 @@ class CronDeliveryService:
         usage = UsageTracker()
         parts: list[str] = []
         interaction_required = False
-        saw_tool_call = False
-        emitted_tool_error_ids: set[str] = set()
         try:
             from oi.infra.connectors.gateway.adapters.agently_cli import write_scope
 
@@ -150,20 +146,9 @@ class CronDeliveryService:
                 async for chunk in self._agent_manager.stream(command.agent_id, request):
                     tracker.observe(chunk)
                     usage.observe(chunk)
-                    kind = chunk.get("type")
-                    if kind == "tool_call_chunk":
-                        saw_tool_call = True
-                    elif kind == "tool_result":
-                        log_failed_tool_results(
-                            chunk,
-                            agent_id=command.agent_id,
-                            thread_id=session.thread_id,
-                            seen=emitted_tool_error_ids,
-                            live=saw_tool_call,
-                        )
-                    if kind in ("token", "delta"):
+                    if chunk.get("type") in ("token", "delta"):
                         parts.append(str(chunk.get("content") or chunk.get("text") or ""))
-                    elif kind == "hitl_required":
+                    elif chunk.get("type") == "hitl_required":
                         interaction_required = True
             if interaction_required:
                 raise RuntimeError("cron agent run requires user interaction")
@@ -174,7 +159,6 @@ class CronDeliveryService:
             # ``fresh_thread`` already put an empty thread on the session, so a run
             # that raised before this left a conversation with no rows at all.
             self._project_best_effort(session.thread_id, tracker.inputs)
-            self._remember_thread_title(session, command)
         if usage.usage is not None:
             record_turn_usage(
                 self._repos.usage_repo,
@@ -283,26 +267,6 @@ class CronDeliveryService:
             is_admin=is_admin,
             locale=locale,
         )
-
-    def _remember_thread_title(self, session: SessionRow, command: CronDeliveryCommand) -> None:
-        """Name the conversation when the scheduled run writes it.
-
-        Push only titles dashboard/CLI sessions, and only after the channel
-        accepts the text. A failed push, an IM target, or an agent run that
-        died after projecting history left ``threads.title`` null until the
-        user sent the next message.
-        """
-        title = (command.cron_name or "").strip() or (command.prompt or "").strip()
-        if not title:
-            return
-        try:
-            self._gateway.thread_registry.set_title_if_null(session.thread_id, title)
-        except Exception:
-            logger.warning(
-                "failed to title cron thread=%s",
-                session.thread_id,
-                exc_info=True,
-            )
 
     def _project_best_effort(
         self,

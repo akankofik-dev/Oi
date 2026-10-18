@@ -15,6 +15,7 @@ import { HttpsSettingsPanel } from "../HttpsSettings";
 import UpdateConfig from "./UpdateConfig";
 import CaptchaSettingsPanel from "./CaptchaSettings";
 import PageShell from "../../../layouts/PageShell";
+import { useIsMobile } from "../../../hooks/useIsMobile";
 import TabBar, { type TabBarItem } from "../../../components/TabLabel/TabBar";
 import tabStyles from "./tabContent.module.less";
 import ForbiddenPage from "../../../components/ForbiddenPage";
@@ -53,6 +54,7 @@ function parseTab(raw: string | null): TabKey {
 
 export default function AdvancedSettingsPage() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [searchParams] = useSearchParams();
   const { allowedTabs, activeTab, forbidden, selectTab } = useGatedSearchTabs({
     tabs: TABS,
@@ -91,7 +93,7 @@ export default function AdvancedSettingsPage() {
   return (
     <PageShell.Tabbed
       title={t("pageShell.adminAdvanced.title")}
-      subtitle={t("pageShell.adminAdvanced.subtitle")}
+      subtitle={isMobile ? undefined : t("pageShell.adminAdvanced.subtitle")}
       tabBar={
         <TabBar tabs={allowedTabs} activeKey={activeTab} onChange={selectTab} />
       }

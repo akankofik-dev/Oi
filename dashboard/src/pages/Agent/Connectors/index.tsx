@@ -25,6 +25,7 @@ import TabBar, { type TabBarItem } from "../../../components/TabLabel/TabBar";
 import StreamSetupGuide from "../../../components/StreamSetupGuide/StreamSetupGuide";
 import { OiEmptyMascot } from "../../../components/EmptyState/OiEmptyMascot";
 import { useCurrentUser } from "../../../hooks/useCurrentUser";
+import { useIsMobile } from "../../../hooks/useIsMobile";
 import { userCan } from "../../../utils/permissions";
 import { apiErrorMessage } from "../../../utils/apiError";
 import { copyText } from "../../../utils/copyText";
@@ -60,12 +61,6 @@ import {
   isGuidedConnector,
 } from "./guidedConnectorUtils";
 import { oauthCallbackSupported } from "./oauthCallback";
-import {
-  isAuthPopupBlocked,
-  navigateAuthWindow,
-  openExternalBrowserUrl,
-  tryOpenAuthPopup,
-} from "./openAuthWindow";
 import { useConnectorInstances } from "./useConnectors";
 import styles from "./index.module.less";
 
@@ -269,9 +264,9 @@ function openAuthorizeLabel(
   t: (key: string, fallback: string) => string,
 ): string {
   if (kind === "tencent-ima") {
-    return t("connectors.openAuthorizePage", "打开授权页");
+    return t("connectors.openAuthorizePage", "Buka halaman otorisasi");
   }
-  return t("connectors.openTokenPage", "打开授权页");
+  return t("connectors.openTokenPage", "Buka halaman auth");
 }
 
 function authCodeGuideLabel(
@@ -279,9 +274,9 @@ function authCodeGuideLabel(
   t: (key: string, fallback: string) => string,
 ): string {
   if (kind === "tencent-news") {
-    return t("connectors.newsAuthGuide", "如何获取腾讯新闻 API Key");
+    return t("connectors.newsAuthGuide", "Cara mendapatkan Kunci API Tencent News");
   }
-  return t("connectors.authCodeDoc", "查看如何获取授权码");
+  return t("connectors.authCodeDoc", "Lihat cara mendapatkan kode otorisasi");
 }
 
 function secretFieldRules(required: boolean) {
@@ -303,13 +298,11 @@ function configuredExtra(
   t: (key: string, fallback: string) => string,
 ) {
   if (!preview?.[key]) return undefined;
-  return t("connectors.secretConfigured", "已配置，留空表示不修改");
+  return t("connectors.secretConfigured", "Sudah dikonfigurasi — kosongkan untuk mempertahankan nilai saat ini");
 }
 
 function isHostCliConnector(kind: string): boolean {
-  return ["feishu-cli", "wecom-cli", "agently-cli", "obsidian-cli"].includes(
-    kind,
-  );
+  return ["feishu-cli", "wecom-cli", "agently-cli"].includes(kind);
 }
 
 function ConnectorConfigDrawer({
@@ -457,12 +450,12 @@ function ConnectorConfigDrawer({
 
   const openUrl = (url: string | null | undefined) => {
     if (!url) return;
-    openExternalBrowserUrl(url);
+    window.open(url, "oi-connector-auth", "width=720,height=800");
   };
 
   /** Open sync under the click gesture so popup blockers don't swallow async opens. */
   const openAuthPopupPlaceholder = (): Window | null => {
-    const popup = tryOpenAuthPopup(
+    const popup = window.open(
       "about:blank",
       "oi-connector-auth",
       "width=720,height=800",
@@ -479,20 +472,37 @@ function ConnectorConfigDrawer({
     return popup;
   };
 
+  const navigateAuthPopup = (
+    popup: Window | null,
+    url: string | null | undefined,
+  ) => {
+    if (!url) return;
+    if (popup && !popup.closed) {
+      try {
+        popup.location.replace(url);
+        popup.focus();
+        return;
+      } catch {
+        // Fall through to a fresh open.
+      }
+    }
+    openUrl(url);
+  };
+
   const handleOpenAuthorize = async () => {
     if (!entry) return;
     setOpeningAuthorize(true);
     try {
       const { authorize_url } = await connectorsApi.authorizeUrl(entry.kind);
       if (!authorize_url) {
-        message.error(t("connectors.authUrlMissing", "无法获取授权页地址"));
+        message.error(t("connectors.authUrlMissing", "URL halaman otorisasi tidak tersedia"));
         return;
       }
       openUrl(authorize_url);
     } catch (e) {
       console.error(e);
       message.error(
-        apiErrorMessage(e, t("connectors.authUrlFailed", "打开授权页失败"), t),
+        apiErrorMessage(e, t("connectors.authUrlFailed", "Gagal membuka halaman otorisasi"), t),
       );
     } finally {
       setOpeningAuthorize(false);
@@ -506,10 +516,10 @@ function ConnectorConfigDrawer({
   const handleCopyInstallCommand = async (command: string) => {
     const ok = await copyText(command);
     if (ok) {
-      message.success(t("connectors.cliInstallCopied", "安装命令已复制"));
+      message.success(t("connectors.cliInstallCopied", "Perintah instal disalin"));
     } else {
       message.error(
-        t("connectors.clipboardDenied", "无法读取剪贴板，请手动粘贴"),
+        t("connectors.clipboardDenied", "Tidak dapat membaca clipboard — tempel manual"),
       );
     }
   };
@@ -532,7 +542,7 @@ function ConnectorConfigDrawer({
       message.error(
         apiErrorMessage(
           e,
-          t("connectors.cliInstallFailed", "主机 CLI 安装失败"),
+          t("connectors.cliInstallFailed", "Instal CLI host gagal"),
           t,
         ),
       );
@@ -563,7 +573,7 @@ function ConnectorConfigDrawer({
         );
       } else {
         message.error(
-          result.error ?? t("connectors.cliInstallFailed", "主机 CLI 安装失败"),
+          result.error ?? t("connectors.cliInstallFailed", "Instal CLI host gagal"),
         );
       }
     } catch (e) {
@@ -571,7 +581,7 @@ function ConnectorConfigDrawer({
       message.error(
         apiErrorMessage(
           e,
-          t("connectors.cliInstallFailed", "主机 CLI 安装失败"),
+          t("connectors.cliInstallFailed", "Instal CLI host gagal"),
           t,
         ),
       );
@@ -626,7 +636,7 @@ function ConnectorConfigDrawer({
       form.setFieldsValue({ cli_config_key: started.cli_config_key });
       setFeishuUserAuth(started);
       setFeishuUserReady(false);
-      navigateAuthWindow(popup, started.verification_url);
+      navigateAuthPopup(popup, started.verification_url);
       message.success(
         t(
           "connectors.feishuUserAuthStarted",
@@ -637,7 +647,7 @@ function ConnectorConfigDrawer({
       popup?.close();
       console.error(e);
       message.error(
-        apiErrorMessage(e, t("connectors.feishuUserAuthFailed", "授权失败"), t),
+        apiErrorMessage(e, t("connectors.feishuUserAuthFailed", "Otorisasi gagal"), t),
       );
     } finally {
       setFeishuUserAuthBusy(false);
@@ -699,14 +709,14 @@ function ConnectorConfigDrawer({
       } else {
         message.success(
           persisted
-            ? t("connectors.feishuUserAuthSuccessSaved", "授权完成")
-            : t("connectors.feishuUserAuthSuccess", "授权完成，请保存连接器"),
+            ? t("connectors.feishuUserAuthSuccessSaved", "Terotorisasi")
+            : t("connectors.feishuUserAuthSuccess", "Terotorisasi — simpan konektor"),
         );
       }
     } catch (e) {
       console.error(e);
       message.error(
-        apiErrorMessage(e, t("connectors.feishuUserAuthFailed", "授权失败"), t),
+        apiErrorMessage(e, t("connectors.feishuUserAuthFailed", "Otorisasi gagal"), t),
       );
     } finally {
       setFeishuUserAuthBusy(false);
@@ -744,7 +754,7 @@ function ConnectorConfigDrawer({
     try {
       const text = (await navigator.clipboard.readText()).trim();
       if (!text) {
-        message.warning(t("connectors.clipboardEmpty", "剪贴板为空"));
+        message.warning(t("connectors.clipboardEmpty", "Clipboard kosong"));
         return;
       }
       if (entry?.auth_kind === "personal_token") {
@@ -754,10 +764,10 @@ function ConnectorConfigDrawer({
       } else if (entry?.auth_kind === "api_key") {
         form.setFieldValue("api_key", text);
       }
-      message.success(t("connectors.pasteSuccess", "已粘贴"));
+      message.success(t("connectors.pasteSuccess", "Ditempel"));
     } catch {
       message.error(
-        t("connectors.clipboardDenied", "无法读取剪贴板，请手动粘贴"),
+        t("connectors.clipboardDenied", "Tidak dapat membaca clipboard — tempel manual"),
       );
     }
   };
@@ -767,14 +777,14 @@ function ConnectorConfigDrawer({
     try {
       const text = (await navigator.clipboard.readText()).trim();
       if (!text) {
-        message.warning(t("connectors.clipboardEmpty", "剪贴板为空"));
+        message.warning(t("connectors.clipboardEmpty", "Clipboard kosong"));
         return;
       }
       const pastedUrl = extractHttpUrl(text);
       if (entry.kind === "dify") {
         if (!pastedUrl) {
           message.warning(
-            t("connectors.difyPasteUrlRequired", "剪贴板中没有 MCP URL"),
+            t("connectors.difyPasteUrlRequired", "Tidak ada URL MCP di clipboard"),
           );
           return;
         }
@@ -789,7 +799,7 @@ function ConnectorConfigDrawer({
         draftScope,
         form.getFieldsValue() as Record<string, unknown>,
       );
-      message.success(t("connectors.pasteSuccess", "已粘贴"));
+      message.success(t("connectors.pasteSuccess", "Ditempel"));
     } catch (error) {
       if (error && typeof error === "object" && "errorFields" in error) {
         message.warning(
@@ -801,7 +811,7 @@ function ConnectorConfigDrawer({
         return;
       }
       message.error(
-        t("connectors.clipboardDenied", "无法读取剪贴板，请手动粘贴"),
+        t("connectors.clipboardDenied", "Tidak dapat membaca clipboard — tempel manual"),
       );
     }
   };
@@ -826,14 +836,14 @@ function ConnectorConfigDrawer({
         form.getFieldsValue() as Record<string, unknown>,
       );
       message.success(
-        t("connectors.weknoraFound", "已检测到本机 WeKnora 并填入地址"),
+        t("connectors.weknoraFound", "WeKnora lokal terdeteksi dan URL terisi"),
       );
     } catch (error) {
       console.error(error);
       message.error(
         apiErrorMessage(
           error,
-          t("connectors.weknoraDetectFailed", "检测本机 WeKnora 失败"),
+          t("connectors.weknoraDetectFailed", "Gagal mendeteksi WeKnora lokal"),
           t,
         ),
       );
@@ -844,8 +854,8 @@ function ConnectorConfigDrawer({
 
   const handleOAuth = async () => {
     if (!entry || authorizing) return;
-    const popup = tryOpenAuthPopup("", "oi-oauth", "width=520,height=720");
-    if (isAuthPopupBlocked(popup)) {
+    const popup = window.open("", "oi-oauth", "width=520,height=720");
+    if (!popup) {
       message.error(
         t(
           "connectors.oauthPopupBlocked",
@@ -872,7 +882,7 @@ function ConnectorConfigDrawer({
       settled = true;
       cleanup();
       try {
-        popup?.close();
+        popup.close();
       } catch {
         // ignore
       }
@@ -890,7 +900,7 @@ function ConnectorConfigDrawer({
         if (tokens.openid) credentials.openid = tokens.openid;
 
         if (!credentials.access_token) {
-          message.error(t("connectors.oauthFailed", "获取授权结果失败"));
+          message.error(t("connectors.oauthFailed", "Gagal mengambil hasil OAuth"));
           return;
         }
 
@@ -913,7 +923,7 @@ function ConnectorConfigDrawer({
           });
         }
         clearFormDraft(draftScope);
-        message.success(t("connectors.createSuccess", "连接器已创建"));
+        message.success(t("connectors.createSuccess", "Konektor dibuat"));
         onSaved();
         onClose();
       } catch (e) {
@@ -929,7 +939,7 @@ function ConnectorConfigDrawer({
           openid: tokens.openid,
         });
         message.error(
-          apiErrorMessage(e, t("connectors.createFailed", "创建失败"), t),
+          apiErrorMessage(e, t("connectors.createFailed", "Gagal membuat"), t),
         );
       } finally {
         setAuthorizing(false);
@@ -971,28 +981,28 @@ function ConnectorConfigDrawer({
           settled = true;
           cleanup();
           try {
-            popup?.close();
+            popup.close();
           } catch {
             // ignore
           }
           setAuthorizing(false);
           message.error(
-            t("connectors.oauthTimedOut", "授权超时，请重试一键授权"),
+            t("connectors.oauthTimedOut", "Otorisasi habis waktu; coba auth sekali klik lagi"),
           );
         },
         5 * 60 * 1000,
       );
-      navigateAuthWindow(popup, authorize_url);
+      popup.location.replace(authorize_url);
     } catch (e) {
       cleanup();
       try {
-        popup?.close();
+        popup.close();
       } catch {
         // ignore
       }
       console.error(e);
       message.error(
-        apiErrorMessage(e, t("connectors.oauthStartFailed", "无法启动 OAuth")),
+        apiErrorMessage(e, t("connectors.oauthStartFailed", "Tidak dapat memulai OAuth")),
       );
       setAuthorizing(false);
     }
@@ -1055,7 +1065,7 @@ function ConnectorConfigDrawer({
         await form.validateFields();
       } catch {
         message.warning(
-          t("connectors.probeNeedConfig", "请先填写连接配置后再探测"),
+          t("connectors.probeNeedConfig", "Isi pengaturan koneksi sebelum menguji"),
         );
         return;
       }
@@ -1083,12 +1093,12 @@ function ConnectorConfigDrawer({
         }
       } else {
         setProbeResult(null);
-        message.error(r.error ?? t("connectors.probeFailed", "探测失败"));
+        message.error(r.error ?? t("connectors.probeFailed", "Uji gagal"));
       }
     } catch (e) {
       console.error(e);
       message.error(
-        apiErrorMessage(e, t("connectors.probeFailed", "探测失败"), t),
+        apiErrorMessage(e, t("connectors.probeFailed", "Uji gagal"), t),
       );
     } finally {
       setProbing(false);
@@ -1114,7 +1124,7 @@ function ConnectorConfigDrawer({
                 "connectors.qccNeedAuthOrKey",
                 "请先完成一键授权，或填写 API Key",
               )
-            : t("connectors.oauthNeedToken", "请先完成授权或手动填写 Token"),
+            : t("connectors.oauthNeedToken", "Selesaikan otorisasi atau tempel token terlebih dahulu"),
         );
         return;
       }
@@ -1141,15 +1151,15 @@ function ConnectorConfigDrawer({
         });
         if (entry.kind === "agently-cli") {
           clearFormDraft(draftScope);
-          message.success(t("connectors.createSuccess", "连接器已创建"));
+          message.success(t("connectors.createSuccess", "Konektor dibuat"));
           onSaved(created);
           return;
         }
       }
       message.success(
         instance
-          ? t("connectors.saveSuccess", "连接器已保存")
-          : t("connectors.createSuccess", "连接器已创建"),
+          ? t("connectors.saveSuccess", "Konektor tersimpan")
+          : t("connectors.createSuccess", "Konektor dibuat"),
       );
       clearFormDraft(draftScope);
       onSaved();
@@ -1157,7 +1167,7 @@ function ConnectorConfigDrawer({
     } catch (e) {
       console.error(e);
       message.error(
-        apiErrorMessage(e, t("connectors.createFailed", "创建失败"), t),
+        apiErrorMessage(e, t("connectors.createFailed", "Gagal membuat"), t),
       );
     } finally {
       setSaving(false);
@@ -1222,7 +1232,7 @@ function ConnectorConfigDrawer({
             disabled={entry.kind === "agently-cli" && !hasStoredCredentials}
             onClick={() => void handleProbe()}
           >
-            {t("connectors.probe", "探测")}
+            {t("connectors.probe", "Uji")}
           </Button>
           <Button
             type="primary"
@@ -1271,12 +1281,12 @@ function ConnectorConfigDrawer({
         {guidedKind && (
           <div className={styles.guidedSetup}>
             <div className={styles.guidedSetupTitle}>
-              {t("connectors.guidedSetup", "快速接入")}
+              {t("connectors.guidedSetup", "Setup cepat")}
             </div>
             {guidedKind === "weknora" ? (
               <ol>
                 <li>
-                  {t("connectors.weknoraStep1", "打开 WeKnora 并创建 API Key")}
+                  {t("connectors.weknoraStep1", "Buka WeKnora dan buat Kunci API")}
                 </li>
                 <li>
                   {t(
@@ -1285,13 +1295,13 @@ function ConnectorConfigDrawer({
                   )}
                 </li>
                 <li>
-                  {t("connectors.guidedStepProbe", "粘贴凭证后探测并保存")}
+                  {t("connectors.guidedStepProbe", "Uji dan simpan setelah menempel kredensial")}
                 </li>
               </ol>
             ) : (
               <ol>
                 <li>
-                  {t("connectors.difyStep1", "在 Dify 中发布应用或工作流")}
+                  {t("connectors.difyStep1", "Publikasikan aplikasi atau alur kerja di Dify")}
                 </li>
                 <li>
                   {t(
@@ -1300,7 +1310,7 @@ function ConnectorConfigDrawer({
                   )}
                 </li>
                 <li>
-                  {t("connectors.guidedStepProbe", "粘贴凭证后探测并保存")}
+                  {t("connectors.guidedStepProbe", "Uji dan simpan setelah menempel kredensial")}
                 </li>
               </ol>
             )}
@@ -1310,7 +1320,7 @@ function ConnectorConfigDrawer({
         {guideUrl && !hideGuideLink && (
           <div className={styles.guideLinks}>
             <a href={guideUrl} target="_blank" rel="noreferrer">
-              {t("connectors.viewGuide", "查看获取说明")}
+              {t("connectors.viewGuide", "Lihat panduan")}
             </a>
           </div>
         )}
@@ -1324,7 +1334,7 @@ function ConnectorConfigDrawer({
                   loading={detectingLocalWeKnora}
                   onClick={() => void handleDetectLocalWeKnora()}
                 >
-                  {t("connectors.detectLocal", "检测本机服务")}
+                  {t("connectors.detectLocal", "Deteksi layanan lokal")}
                 </Button>
               )}
               <Button
@@ -1332,8 +1342,8 @@ function ConnectorConfigDrawer({
                 onClick={() => void handleGuidedPaste()}
               >
                 {guidedKind === "dify"
-                  ? t("connectors.pasteMcpUrl", "粘贴 MCP 地址")
-                  : t("connectors.smartPaste", "智能粘贴")}
+                  ? t("connectors.pasteMcpUrl", "Tempel URL MCP")
+                  : t("connectors.smartPaste", "Tempel cerdas")}
               </Button>
             </>
           )}
@@ -1353,8 +1363,8 @@ function ConnectorConfigDrawer({
                   onClick={() => void handleInstallCli()}
                 >
                   {cliInfo?.installed
-                    ? t("connectors.cliReady", "CLI 已就绪")
-                    : t("connectors.installCli", "安装 CLI")}
+                    ? t("connectors.cliReady", "CLI siap")
+                    : t("connectors.installCli", "Instal CLI")}
                 </Button>
               )}
               {!canInstallCli && cliInfo?.installed && (
@@ -1363,7 +1373,7 @@ function ConnectorConfigDrawer({
                   icon={<CheckCircle2 size={14} />}
                   disabled
                 >
-                  {t("connectors.cliReady", "CLI 已就绪")}
+                  {t("connectors.cliReady", "CLI siap")}
                 </Button>
               )}
               {!canInstallCli && !cliInfo?.installed && (
@@ -1388,7 +1398,7 @@ function ConnectorConfigDrawer({
                     )
                   }
                 >
-                  {t("connectors.copyInstallCommand", "复制安装命令")}
+                  {t("connectors.copyInstallCommand", "Salin perintah instal")}
                 </Button>
               )}
               {(cliInfo?.guide_url ||
@@ -1406,7 +1416,7 @@ function ConnectorConfigDrawer({
                     )
                   }
                 >
-                  {t("connectors.openCliDocs", "安装文档")}
+                  {t("connectors.openCliDocs", "Instal dokumen")}
                 </Button>
               )}
             </>
@@ -1418,7 +1428,7 @@ function ConnectorConfigDrawer({
               loading={authorizing}
               onClick={() => void handleOAuth()}
             >
-              {t("connectors.oneClickOAuth", "一键授权")}
+              {t("connectors.oneClickOAuth", "Otorisasi")}
             </Button>
           )}
           {hasAuthorizeUrl && !hideTopAuth && !hasOAuthPopup && (
@@ -1429,8 +1439,8 @@ function ConnectorConfigDrawer({
               onClick={() => void handleOpenAuthorize()}
             >
               {entry.kind === "qcc"
-                ? t("connectors.qccOpenKeyPage", "打开授权页")
-                : t("connectors.openAuthorizePage", "打开授权页")}
+                ? t("connectors.qccOpenKeyPage", "Buka halaman auth")
+                : t("connectors.openAuthorizePage", "Buka halaman otorisasi")}
             </Button>
           )}
           {hasOAuthPopup && entry.kind === "qcc" && hasAuthorizeUrl && (
@@ -1439,12 +1449,12 @@ function ConnectorConfigDrawer({
               loading={openingAuthorize}
               onClick={() => void handleOpenAuthorize()}
             >
-              {t("connectors.qccOpenKeyPage", "打开授权页")}
+              {t("connectors.qccOpenKeyPage", "Buka halaman auth")}
             </Button>
           )}
           {hasLoginUrl && !hideTopAuth && (
             <Button icon={<ExternalLink size={14} />} onClick={handleOpenLogin}>
-              {t("connectors.openLoginPage", "打开登录页")}
+              {t("connectors.openLoginPage", "Buka halaman login")}
             </Button>
           )}
           {!hideTopAuth &&
@@ -1470,7 +1480,7 @@ function ConnectorConfigDrawer({
               icon={<ClipboardPaste size={14} />}
               onClick={() => void handlePasteToken()}
             >
-              {t("connectors.pasteFromClipboard", "从剪贴板粘贴")}
+              {t("connectors.pasteFromClipboard", "Tempel dari clipboard")}
             </Button>
           )}
         </div>
@@ -1516,7 +1526,7 @@ function ConnectorConfigDrawer({
                     target="_blank"
                     rel="noreferrer"
                   >
-                    {t("connectors.openCliDocs", "安装文档")}
+                    {t("connectors.openCliDocs", "Instal dokumen")}
                   </a>
                 )}
                 {(cliInfo.doc_url || entry.doc_url) && (
@@ -1525,26 +1535,11 @@ function ConnectorConfigDrawer({
                     target="_blank"
                     rel="noreferrer"
                   >
-                    {t("connectors.openCliRepo", "项目主页")}
+                    {t("connectors.openCliRepo", "Halaman proyek")}
                   </a>
                 )}
               </div>
             )}
-          </div>
-        )}
-
-        {entry?.kind === "obsidian-cli" && (
-          <div className={styles.cliInstallHint}>
-            <a
-              href="https://obsidian.md/zh/cli"
-              target="_blank"
-              rel="noreferrer"
-            >
-              {t(
-                "connectors.obsidianCliGuide",
-                "Obsidian-cli官方安装指引：https://obsidian.md/zh/cli",
-              )}
-            </a>
           </div>
         )}
 
@@ -1582,18 +1577,18 @@ function ConnectorConfigDrawer({
           }}
         >
           <div className={styles.configSectionTitle}>
-            {t("connectors.configSection", "连接配置")}
+            {t("connectors.configSection", "Pengaturan koneksi")}
           </div>
           <Form.Item
             name="display_name"
-            label={t("connectors.displayName", "显示名称")}
+            label={t("connectors.displayName", "Nama tampilan")}
             rules={[{ required: true }]}
           >
             <Input placeholder={entry.name} />
           </Form.Item>
           <Form.Item
             name="description"
-            label={t("connectors.description", "描述")}
+            label={t("connectors.description", "Deskripsi")}
             rules={[{ required: true }]}
           >
             <Input.TextArea
@@ -1611,7 +1606,7 @@ function ConnectorConfigDrawer({
                 <Input.Password
                   placeholder={
                     hasStoredCredentials && field.secret
-                      ? t("connectors.secretPlaceholder", "留空表示不修改")
+                      ? t("connectors.secretPlaceholder", "Kosongkan untuk mempertahankan nilai saat ini")
                       : field.placeholder ?? undefined
                   }
                 />
@@ -1658,17 +1653,17 @@ function ConnectorConfigDrawer({
           {entry.auth_kind === "personal_token" && (
             <Form.Item
               name="token"
-              label={t("connectors.token", "访问 Token")}
+              label={t("connectors.token", "Token akses")}
               rules={secretFieldRules(secretRequired)}
               extra={
                 configuredExtra(preview, "token_configured", t) ??
                 (!hideFieldGuide && manualUrl ? (
                   <a href={manualUrl} target="_blank" rel="noreferrer">
-                    {t("connectors.getTokenAt", "前往获取 Token")}
+                    {t("connectors.getTokenAt", "Dapatkan Token")}
                   </a>
                 ) : !hideFieldGuide ? (
                   <a href={entry.doc_url} target="_blank" rel="noreferrer">
-                    {t("connectors.getToken", "获取 Token")}
+                    {t("connectors.getToken", "Dapatkan token")}
                   </a>
                 ) : undefined)
               }
@@ -1683,7 +1678,7 @@ function ConnectorConfigDrawer({
             <>
               <Form.Item
                 name="auth_code"
-                label={t("connectors.authCode", "授权码")}
+                label={t("connectors.authCode", "Kode otorisasi")}
                 rules={secretFieldRules(secretRequired)}
                 extra={
                   configuredExtra(preview, "auth_configured", t) ??
@@ -1701,8 +1696,8 @@ function ConnectorConfigDrawer({
                 <Input.Password
                   placeholder={
                     hasStoredCredentials
-                      ? t("connectors.secretPlaceholder", "留空表示不修改")
-                      : t("connectors.authCodePlaceholder", "粘贴授权码")
+                      ? t("connectors.secretPlaceholder", "Kosongkan untuk mempertahankan nilai saat ini")
+                      : t("connectors.authCodePlaceholder", "Tempel kode otorisasi")
                   }
                 />
               </Form.Item>
@@ -1748,7 +1743,7 @@ function ConnectorConfigDrawer({
                 <Input.Password
                   placeholder={
                     hasStoredCredentials
-                      ? t("connectors.secretPlaceholder", "留空表示不修改")
+                      ? t("connectors.secretPlaceholder", "Kosongkan untuk mempertahankan nilai saat ini")
                       : t(
                           "connectors.feishuAppSecretPlaceholder",
                           "飞书应用 App Secret",
@@ -1758,7 +1753,7 @@ function ConnectorConfigDrawer({
               </Form.Item>
               <div className={styles.feishuUserAuthBox}>
                 <div className={styles.feishuUserAuthTitle}>
-                  {t("connectors.feishuUserAuthTitle", "飞书账号授权")}
+                  {t("connectors.feishuUserAuthTitle", "Otorisasi akun Feishu")}
                 </div>
                 <p className={styles.feishuUserAuthWhy}>
                   {t(
@@ -1807,8 +1802,8 @@ function ConnectorConfigDrawer({
                     onClick={() => void handleFeishuUserAuthStart()}
                   >
                     {feishuUserReady || feishuAuthNeedsReauth
-                      ? t("connectors.feishuUserAuthAgain", "重新授权")
-                      : t("connectors.feishuUserAuthStart", "登录授权")}
+                      ? t("connectors.feishuUserAuthAgain", "Otorisasi ulang")
+                      : t("connectors.feishuUserAuthStart", "Otorisasi")}
                   </Button>
                   {feishuUserAuth && (
                     <Button
@@ -1816,7 +1811,7 @@ function ConnectorConfigDrawer({
                       loading={feishuUserAuthBusy}
                       onClick={() => void handleFeishuUserAuthComplete()}
                     >
-                      {t("connectors.feishuUserAuthConfirm", "我已授权")}
+                      {t("connectors.feishuUserAuthConfirm", "Saya sudah mengotorisasi")}
                     </Button>
                   )}
                 </div>
@@ -1826,7 +1821,7 @@ function ConnectorConfigDrawer({
                     className={styles.feishuUserAuthReopen}
                     onClick={() => openUrl(feishuUserAuth.verification_url)}
                   >
-                    {t("connectors.feishuUserAuthReopen", "未弹出？再打开一次")}
+                    {t("connectors.feishuUserAuthReopen", "Popup diblokir? Buka lagi")}
                   </button>
                 )}
               </div>
@@ -1866,7 +1861,7 @@ function ConnectorConfigDrawer({
                 <Input.Password
                   placeholder={
                     hasStoredCredentials
-                      ? t("connectors.secretPlaceholder", "留空表示不修改")
+                      ? t("connectors.secretPlaceholder", "Kosongkan untuk mempertahankan nilai saat ini")
                       : t(
                           "connectors.wecomBotSecretPlaceholder",
                           "企业微信机器人 Secret",
@@ -1889,7 +1884,7 @@ function ConnectorConfigDrawer({
                     configuredExtra(preview, "api_key_configured", t) ??
                     (!hideFieldGuide && manualUrl ? (
                       <a href={manualUrl} target="_blank" rel="noreferrer">
-                        {t("connectors.apiKeyDoc", "查看如何获取 API Key")}
+                        {t("connectors.apiKeyDoc", "Lihat cara mendapatkan Kunci API")}
                       </a>
                     ) : undefined)
                   }
@@ -1897,13 +1892,13 @@ function ConnectorConfigDrawer({
                   <Input.Password
                     placeholder={
                       hasStoredCredentials
-                        ? t("connectors.secretPlaceholder", "留空表示不修改")
+                        ? t("connectors.secretPlaceholder", "Kosongkan untuk mempertahankan nilai saat ini")
                         : entry.kind === "tencent-ima"
                         ? t(
                             "connectors.imaApiKeyPlaceholder",
                             "从 IMA 配置页复制（仅展示一次）",
                           )
-                        : t("connectors.apiKeyPlaceholder", "粘贴 API Key")
+                        : t("connectors.apiKeyPlaceholder", "Tempel Kunci API")
                     }
                   />
                 </Form.Item>
@@ -1963,7 +1958,7 @@ function ConnectorConfigDrawer({
               </Form.Item>
               {preview?.oauth_configured && !showManual && (
                 <div className={styles.configuredBadge}>
-                  {t("connectors.oauthConfigured", "已授权，可直接探测或保存")}
+                  {t("connectors.oauthConfigured", "Terotorisasi — uji atau simpan sekarang")}
                 </div>
               )}
               {entry.kind === "qcc" &&
@@ -2007,7 +2002,7 @@ function ConnectorConfigDrawer({
                   <Input.Password
                     placeholder={
                       preview?.api_key_configured
-                        ? t("connectors.secretPlaceholder", "留空表示不修改")
+                        ? t("connectors.secretPlaceholder", "Kosongkan untuk mempertahankan nilai saat ini")
                         : t(
                             "connectors.qccApiKeyPlaceholder",
                             "粘贴企查查 API Key",
@@ -2024,8 +2019,8 @@ function ConnectorConfigDrawer({
                     tabIndex={0}
                   >
                     {showManual
-                      ? t("connectors.hideManual", "收起手动输入")
-                      : t("connectors.showManual", "手动粘贴 Token")}
+                      ? t("connectors.hideManual", "Sembunyikan input manual")
+                      : t("connectors.showManual", "Tempel token manual")}
                   </div>
                   {showManual && (
                     <Form.Item
@@ -2058,26 +2053,26 @@ function ConnectorConfigDrawer({
             <>
               <Form.Item
                 name="mail_provider"
-                label={t("connectors.mailProvider", "邮箱服务商")}
+                label={t("connectors.mailProvider", "Provider email")}
                 initialValue="qq"
               >
                 <Select
                   options={MAIL_PROVIDERS.map((item) => ({
                     value: item.id,
-                    label: t(`connectors.mailProviders.${item.id}`),
+                    label: item.label,
                   }))}
                 />
               </Form.Item>
               <Form.Item
                 name="email"
-                label={t("connectors.email", "邮箱地址")}
+                label={t("connectors.email", "Alamat email")}
                 rules={[{ required: true }]}
               >
                 <Input placeholder={selectedMailProvider.emailPlaceholder} />
               </Form.Item>
               <Form.Item
                 name="password"
-                label={t("connectors.authCode", "授权码")}
+                label={t("connectors.authCode", "Kode otorisasi")}
                 rules={secretFieldRules(secretRequired)}
                 extra={
                   configuredExtra(preview, "password_configured", t) ??
@@ -2098,7 +2093,7 @@ function ConnectorConfigDrawer({
                 <Input.Password
                   placeholder={
                     hasStoredCredentials
-                      ? t("connectors.secretPlaceholder", "留空表示不修改")
+                      ? t("connectors.secretPlaceholder", "Kosongkan untuk mempertahankan nilai saat ini")
                       : undefined
                   }
                 />
@@ -2107,14 +2102,14 @@ function ConnectorConfigDrawer({
                 <>
                   <Form.Item
                     name="imap_host"
-                    label={t("connectors.imapHost", "IMAP 服务器")}
+                    label={t("connectors.imapHost", "Server IMAP")}
                     rules={[{ required: true }]}
                   >
                     <Input placeholder="imap.example.com" />
                   </Form.Item>
                   <Form.Item
                     name="smtp_host"
-                    label={t("connectors.smtpHost", "SMTP 服务器")}
+                    label={t("connectors.smtpHost", "Server SMTP")}
                     rules={[{ required: true }]}
                   >
                     <Input placeholder="smtp.example.com" />
@@ -2149,7 +2144,7 @@ function ConnectorConfigDrawer({
                 <Input.Password
                   placeholder={
                     hasStoredCredentials
-                      ? t("connectors.secretPlaceholder", "留空表示不修改")
+                      ? t("connectors.secretPlaceholder", "Kosongkan untuk mempertahankan nilai saat ini")
                       : undefined
                   }
                 />
@@ -2159,7 +2154,7 @@ function ConnectorConfigDrawer({
 
           <Form.Item
             name="shared"
-            label={t("connectors.shared", "是否共享")}
+            label={t("connectors.shared", "Bagikan dengan yang lain")}
             valuePropName="checked"
             extra={t(
               "connectors.sharedHint",
@@ -2171,7 +2166,7 @@ function ConnectorConfigDrawer({
 
           <Form.Item
             name="default_open"
-            label={t("connectors.defaultEnabled", "是否默认开启")}
+            label={t("connectors.defaultEnabled", "Aktifkan secara default")}
             valuePropName="checked"
             extra={
               defaultOpen
@@ -2207,7 +2202,7 @@ function ConnectorConfigDrawer({
               />
               <div className={styles.probeResultMeta}>
                 <div className={styles.probeResultTitle}>
-                  {t("connectors.probeToolsTitle", "探测成功")}
+                  {t("connectors.probeToolsTitle", "Uji berhasil")}
                 </div>
                 <div className={styles.probeResultSubtitle}>
                   {probeResult.length > 0
@@ -2256,6 +2251,7 @@ const CONNECTOR_TABS: TabBarItem<ConnectorTab>[] = [
 
 export default function ConnectorsPage() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<ConnectorTab>("enabled");
   const [drawerEntry, setDrawerEntry] = useState<ConnectorCatalogEntry | null>(
@@ -2282,7 +2278,7 @@ export default function ConnectorsPage() {
         const entry = catalog.find((c) => c.kind === kind);
         const tokens = pending.tokens ?? {};
         if (!entry || !tokens.access_token) {
-          message.error(t("connectors.oauthFailed", "获取授权结果失败"));
+          message.error(t("connectors.oauthFailed", "Gagal mengambil hasil OAuth"));
           return;
         }
         const credentials: Record<string, unknown> = {
@@ -2306,9 +2302,9 @@ export default function ConnectorsPage() {
         });
         await refresh();
         notifyConnectorsChanged();
-        message.success(t("connectors.createSuccess", "连接器已创建"));
+        message.success(t("connectors.createSuccess", "Konektor dibuat"));
       } catch {
-        message.error(t("connectors.oauthFailed", "获取授权结果失败"));
+        message.error(t("connectors.oauthFailed", "Gagal mengambil hasil OAuth"));
       }
       searchParams.delete("oauth_state");
       setSearchParams(searchParams, { replace: true });
@@ -2336,7 +2332,7 @@ export default function ConnectorsPage() {
   return (
     <PageShell.Tabbed
       title={t("pageShell.connectors.title")}
-      subtitle={t("pageShell.connectors.subtitle")}
+      subtitle={isMobile ? undefined : t("pageShell.connectors.subtitle")}
       tabBar={
         <TabBar
           tabs={CONNECTOR_TABS}

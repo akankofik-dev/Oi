@@ -55,15 +55,16 @@ export function normalizeComposerContext(
 /**
  * WS ``model`` field for each turn.
  *
- * Only a composer selection that differs from the expert default is sent.
- * Matching the expert default (or Auto) is omitted so the backend applies the
- * live expert setting and does not store it as a sticky thread override.
+ * Only an explicit composer selection is sent. Agent/user/global defaults are
+ * resolved by the backend so they are not mistaken for a sticky override.
  */
 export function resolveTurnModelRef(
   selectedModel: string | null | undefined,
   agentDefaultModel: string | null | undefined,
 ): string | null {
-  return resolveTurnModelOverride(selectedModel, agentDefaultModel);
+  const selected = (selectedModel || "").trim();
+  void agentDefaultModel;
+  return selected || null;
 }
 
 /** User picked a model different from the expert default (for UI chips / history). */
@@ -127,13 +128,7 @@ export function buildComposerContext(params: {
 
 export function formatRunUsage(
   usage: TokenUsage | null | undefined,
-  labels: {
-    input: string;
-    output: string;
-    total: string;
-    cacheHit: string;
-    decisionSaved?: string;
-  },
+  labels: { input: string; output: string; total: string; cacheHit: string },
 ): string | null {
   if (!usage) return null;
 
@@ -158,13 +153,6 @@ export function formatRunUsage(
   }
   if (typeof usage.total_tokens === "number") {
     parts.push(`${usage.total_tokens} ${labels.total}`);
-  }
-  if (
-    labels.decisionSaved &&
-    typeof usage.decision_saved === "number" &&
-    usage.decision_saved > 0
-  ) {
-    parts.push(`${usage.decision_saved} ${labels.decisionSaved}`);
   }
   return parts.length > 0 ? parts.join(" / ") : null;
 }

@@ -48,7 +48,7 @@ def _api_key(creds: dict[str, Any]) -> str:
         creds.get("api_key") or creds.get("cookie") or creds.get("auth_code") or ""
     ).strip()
     if not api_key:
-        raise ValueError("请填写腾讯新闻 API Key")
+        raise ValueError("Isi API Key Tencent News")
     return api_key
 
 
@@ -91,11 +91,11 @@ def search_news(creds: dict[str, Any], args: dict[str, Any]) -> str:
         if code not in (0, None, "0"):
             msg = str(base.get("msg") or base.get("message") or code)
             if code in (4006, "4006") or "apikey" in msg.lower() or "api key" in msg.lower():
-                raise ValueError(f"腾讯新闻 API Key 无效: {msg}")
-            raise ValueError(f"腾讯新闻接口错误 [{code}]: {msg}")
+                raise ValueError(f"API Key Tencent News tidak valid: {msg}")
+            raise ValueError(f"Galat antarmuka Tencent News [{code}]: {msg}")
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def probe_credentials(creds: dict[str, Any]) -> None:
     """Validate API Key against the official OpenAPI search endpoint."""
-    search_news(creds, {"query": "新闻", "limit": 1})
+    search_news(creds, {"query": "berita", "limit": 1})

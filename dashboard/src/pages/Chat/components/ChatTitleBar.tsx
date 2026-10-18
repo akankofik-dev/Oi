@@ -10,13 +10,12 @@ import {
   Trash2,
   GitFork,
 } from "lucide-react";
-import { confirmDeleteConversation } from "../utils/deleteConversation";
+import { showConfirmModal } from "../../../utils/confirmModal";
 import type { Session } from "../hooks/useSessions";
 import SessionChannelIcon from "./SessionChannelIcon";
 import TeamChatBadge from "./TeamChatBadge";
 import styles from "../index.module.less";
 import { DESKTOP_DRAG_REGION_CLASS } from "../../../utils/desktopChrome";
-import { isImeComposing } from "../../../utils/ime";
 import { useCollapseThinking } from "../hooks/useCollapseThinking";
 
 interface ChatTitleBarProps {
@@ -25,7 +24,7 @@ interface ChatTitleBarProps {
   onRename: (id: string, name: string) => void;
   onPin: (id: string, pinned: boolean) => void;
   onFork: (id: string) => void;
-  onDelete: (id: string, compact: boolean) => void | Promise<boolean | void>;
+  onDelete: (id: string) => void;
   forkDisabled?: boolean;
   forkDisabledHint?: string;
   isTeam?: boolean;
@@ -89,14 +88,14 @@ export default function ChatTitleBar({
       {
         key: "pin",
         label: session.pinned
-          ? t("chat.unpin", "取消置顶")
-          : t("chat.pin", "置顶"),
+          ? t("chat.unpin", "Lepas sematan")
+          : t("chat.pin", "Sematkan"),
         icon: session.pinned ? <PinOff size={14} /> : <Pin size={14} />,
         onClick: () => onPin(session.id, !session.pinned),
       },
       {
         key: "fork",
-        label: t("chat.fork", "分叉"),
+        label: t("chat.fork", "Fork"),
         icon: <GitFork size={14} />,
         disabled: forkDisabled,
         title: forkDisabled && forkDisabledHint ? forkDisabledHint : undefined,
@@ -108,8 +107,14 @@ export default function ChatTitleBar({
         icon: <Trash2 size={14} />,
         danger: true,
         onClick: () => {
-          confirmDeleteConversation(t, (compact) => {
-            void onDelete(session.id, compact);
+          showConfirmModal({
+            title: t("chat.deleteSessionConfirm"),
+            okText: t("common.delete"),
+            cancelText: t("common.cancel"),
+            okButtonProps: { danger: true },
+            onOk: () => {
+              onDelete(session.id);
+            },
           });
         },
       },
@@ -146,7 +151,6 @@ export default function ChatTitleBar({
             onChange={(e) => setEditValue(e.target.value)}
             onBlur={commitEdit}
             onKeyDown={(e) => {
-              if (isImeComposing(e)) return;
               if (e.key === "Enter") commitEdit();
               if (e.key === "Escape") {
                 setEditValue(title);
@@ -188,7 +192,7 @@ export default function ChatTitleBar({
                 className={`${styles.chatTitleEditBtn} ${
                   moreOpen ? styles.chatTitleHoverShown : ""
                 }`}
-                aria-label={t("common.more", "更多")}
+                aria-label={t("common.more", "Lainnya")}
               >
                 <MoreVertical size={14} strokeWidth={2} aria-hidden />
               </button>

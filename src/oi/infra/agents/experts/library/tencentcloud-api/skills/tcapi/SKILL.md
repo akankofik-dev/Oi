@@ -315,7 +315,7 @@ tccli 的 stdout 与 stderr 是两条独立流，解析时必须严格区分，�
 **③ 解析失败兜底（不抛 Traceback）**
 - 若 stdout 无法解析为 JSON：提示"输出非预期 JSON"，并回显原始 stdout 前 N 字符供诊断，而非抛出 Python 堆栈。
 - 若 stdout 无 JSON 而 stderr 含异常信息，按以下规则解析：
-  - **锚点优先**：以 `[akankofik-devSDKException]` 为唯一权威锚点提取 `code` / `message` / `requestId`，**忽略同行 stderr 里 `usage:` 帮助块等噪音**（它们常与异常挤在同一段，不能"出现 usage 就判参数错"而误伤）。
+  - **锚点优先**：以 `[TencentCloudSDKException]` 为唯一权威锚点提取 `code` / `message` / `requestId`，**忽略同行 stderr 里 `usage:` 帮助块等噪音**（它们常与异常挤在同一段，不能"出现 usage 就判参数错"而误伤）。
   - **区分本地错 vs 服务端错**：有 `requestId` → 服务端已受理并返回（如 `InvalidParameter` / `InternalError` / `UnauthorizedOperation`）；无 `requestId` 且只有 `usage:` → 本地 argparse 参数解析错，与云端无关。
   - 优雅翻译为可读错误（见 Step 4 异常表），不要退化为崩溃。
 - 注意：服务端报错、权限拒绝、接口下线等异常大多落在 **stderr**，分离流是正确翻译错误码的前置条件。

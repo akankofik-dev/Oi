@@ -5,6 +5,7 @@ import { Tabs } from "antd";
 import { Puzzle, Store } from "lucide-react";
 import PageShell from "../../../layouts/PageShell";
 import TabLabel from "../../../components/TabLabel";
+import { useIsMobile } from "../../../hooks/useIsMobile";
 import { InstalledPluginsPanel } from "./InstalledPluginsPanel";
 import { PluginMarketPanel } from "./PluginMarketPanel";
 
@@ -18,6 +19,7 @@ function parseTab(raw: string | null): TabKey {
 
 export default function AdminPluginsPage() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabKey>(() =>
     parseTab(searchParams.get("tab")),
@@ -41,7 +43,7 @@ export default function AdminPluginsPage() {
   return (
     <PageShell.FillTabs
       title={t("pageShell.adminPlugins.title")}
-      subtitle={t("pageShell.adminPlugins.subtitle")}
+      subtitle={isMobile ? undefined : t("pageShell.adminPlugins.subtitle")}
     >
       <Tabs
         activeKey={activeTab}

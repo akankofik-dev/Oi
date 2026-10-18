@@ -4,21 +4,26 @@ from __future__ import annotations
 
 from typing import Literal
 
-Locale = Literal["zh", "en", "id"]
+Locale = Literal["en", "id", "zh"]
 
-DEFAULT_LOCALE: Locale = "zh"
-SUPPORTED_LOCALES: tuple[Locale, ...] = ("zh", "en", "id")
+DEFAULT_LOCALE: Locale = "id"
+SUPPORTED_LOCALES: tuple[Locale, ...] = ("en", "id", "zh")
 
 
 def normalize_locale(raw: str | None) -> Locale:
+    """Normalize locale input to a supported locale.
+
+    Supports ``id`` (Bahasa Indonesia, default), ``en`` (English), and ``zh``
+    (legacy; resolves to Indonesian).
+    """
     if not raw:
         return DEFAULT_LOCALE
-    lower = raw.lower().replace("_", "-")
-    if lower.startswith("zh"):
-        return "zh"
-    if lower.startswith("id"):
+    low = raw.lower()
+    if low.startswith("id"):
         return "id"
-    return "en"
+    if low.startswith("en"):
+        return "en"
+    return DEFAULT_LOCALE
 
 
 def resolve_locale(
@@ -29,21 +34,10 @@ def resolve_locale(
     metadata: dict[str, object] | None = None,
 ) -> Locale:
     """Pick locale: stored user preference wins, then explicit override, then channel hints."""
-    if user_locale:
-        return normalize_locale(user_locale)
     if explicit:
         return normalize_locale(explicit)
-    if metadata:
-        for key in ("locale", "language", "lang"):
-            if metadata.get(key):
-                return normalize_locale(str(metadata[key]))
-    im_zh = {"feishu", "wecom", "weixin", "dingtalk", "qq", "xiaoyi", "yuanbao"}
-    if channel_type in im_zh:
-        return "zh"
-    if lower.startswith("id"):
-        return "id"
-    if channel_type == "telegram":
-        return "en"
+    if user_locale:
+        return normalize_locale(user_locale)
     return DEFAULT_LOCALE
 
 

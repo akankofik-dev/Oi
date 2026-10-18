@@ -142,7 +142,9 @@ def _bad_request(exc: ValueError) -> OiError:
     # re-localizes the message for the request locale, and a format-only kwarg
     # would be gone by then, leaving a literal ``{detail}`` in the response.
     detail = str(exc)
-    return OiError.localized(ErrorCode.LDAP_BAD_REQUEST, detail=detail, details={"detail": detail})
+    return OiError.localized(
+        ErrorCode.LDAP_BAD_REQUEST, detail=detail, details={"detail": detail}
+    )
 
 
 @router.get(

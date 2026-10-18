@@ -248,7 +248,7 @@ async def prepare_dashboard_turn(
             connector_user_id=user.id,
         )
         if failed:
-            locale = getattr(user, "locale", None) or "zh"
+            locale = getattr(user, "locale", None) or "id"
             raise OiError.localized(
                 ErrorCode.CONNECTOR_MCP_LOAD_FAILED,
                 locale,

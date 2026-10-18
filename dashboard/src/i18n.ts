@@ -11,9 +11,6 @@ import {
 export type { UiLocale } from "./utils/localePrefs";
 
 async function loadLocaleBundle(locale: UiLocale) {
-  if (locale === "zh") {
-    return (await import("./locales/zh.json")).default;
-  }
   if (locale === "id") {
     return (await import("./locales/id.json")).default;
   }
@@ -40,7 +37,7 @@ async function isSetupRequired(): Promise<boolean> {
 }
 
 async function hydrateToolLabels(lng: string) {
-  const locale = lng.startsWith("zh") ? "zh" : "en";
+  const locale = lng.startsWith("id") ? "id" : "en";
   try {
     const { labels } = await i18nApi.getToolLabels();
     i18n.addResourceBundle(
@@ -56,7 +53,7 @@ async function hydrateToolLabels(lng: string) {
 }
 
 async function hydrateSkillLabels(lng: string) {
-  const locale = lng.startsWith("zh") ? "zh" : "en";
+  const locale = lng.startsWith("id") ? "id" : "en";
   try {
     const { labels } = await i18nApi.getSkillLabels();
     i18n.addResourceBundle(
@@ -96,7 +93,7 @@ export function initI18n(): Promise<void> {
         },
         lng: initial,
         fallbackLng: fallback,
-        supportedLngs: ["zh", "en"],
+        supportedLngs: ["id", "en"],
         nonExplicitSupportedLngs: true,
         interpolation: {
           escapeValue: false,
@@ -115,7 +112,7 @@ export function initI18n(): Promise<void> {
       }
 
       i18n.on("languageChanged", (lng) => {
-        const locale: UiLocale = lng.startsWith("zh") ? "zh" : "en";
+        const locale: UiLocale = lng.startsWith("id") ? "id" : "en";
         syncDocumentLang(locale);
         void ensureLocaleBundle(locale).then(() => hydrateServerLabels(lng));
       });

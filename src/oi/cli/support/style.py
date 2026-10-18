@@ -213,7 +213,7 @@ def render_bar(fraction, width=BAR_WIDTH, fill_char=None, color=None):
     filled = int(round(fraction * width))
     pct = int(round(fraction * 100))
     bar = fill * filled + empty * (width - filled)
-    return click.style(f"{bar} {pct:3d}%", fg=color)
+    return click.style("%s %3d%%" % (bar, pct), fg=color)
 
 
 # ---------------------------------------------------------------------------
@@ -322,9 +322,9 @@ class LoadingBar:
 
     def _run(self):
         stream = sys.stderr
-        prefix = f"{self.label} " if self.label else ""
+        prefix = "%s " % self.label if self.label else ""
         for frame in self._frames():
-            stream.write(f"\r{prefix}{frame}")
+            stream.write("\r%s%s" % (prefix, frame))
             stream.flush()
             if self._stop.wait(self.interval):
                 break
@@ -337,7 +337,7 @@ class LoadingBar:
         if self._thread is not None:
             return self
         if not self._animated and self.label:
-            click.echo(dim(f"{self.label}..."), err=True)
+            click.echo(dim("%s..." % self.label), err=True)
         if self._animated:
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
@@ -411,10 +411,10 @@ class ProgressBar:
     def _draw(self):
         if not self._animated:
             return
-        prefix = f"{self.label} " if self.label else ""
+        prefix = "%s " % self.label if self.label else ""
         fraction = self.current / self.total
         sys.stderr.write(
-            f"\r{prefix}{render_bar(fraction, self.width, self.fill_char, self.color)}"
+            "\r%s%s" % (prefix, render_bar(fraction, self.width, self.fill_char, self.color))
         )
         sys.stderr.flush()
 
@@ -434,19 +434,20 @@ class ProgressBar:
             return
         self._finished = True
         if self._animated:
-            prefix = f"{self.label} " if self.label else ""
+            prefix = "%s " % self.label if self.label else ""
             sys.stderr.write(
-                f"\r{prefix}{render_bar(1.0, self.width, self.fill_char, self.color)}\n"
+                "\r%s%s\n"
+                % (prefix, render_bar(1.0, self.width, self.fill_char, self.color))
             )
             sys.stderr.flush()
         elif self.label:
-            click.echo(dim(f"{self.label}... done"), err=True)
+            click.echo(dim("%s... done" % self.label), err=True)
         if final_text:
             echo_success(final_text)
 
     def __enter__(self):
         if not self._animated and self.label:
-            click.echo(dim(f"{self.label}..."), err=True)
+            click.echo(dim("%s..." % self.label), err=True)
         else:
             self._draw()
         return self
@@ -598,7 +599,8 @@ class StepList:
     def __init__(self, title="", steps=()):
         self.title = title
         self._steps = [
-            {"label": label, "state": "pending", "elapsed": 0.0, "detail": ""} for label in steps
+            {"label": label, "state": "pending", "elapsed": 0.0, "detail": ""}
+            for label in steps
         ]
         self._animated = _stderr_is_tty()
         self._started = False
@@ -630,8 +632,10 @@ class StepList:
         if not self._started:
             return
         self._stop_animation()
-        total = time.monotonic() - self._total_start if self._total_start else 0.0
-        text = done_text or f"Done in {total:.1f}s"
+        total = (
+            time.monotonic() - self._total_start if self._total_start else 0.0
+        )
+        text = done_text or "Done in %.1fs" % total
         if self._animated:
             click.echo("", err=True)
         click.echo(dim(text), err=True)
@@ -660,10 +664,14 @@ class StepList:
         """Return the index of *label*, appending a pending step if new."""
         index = self._index_of(label)
         if index is None:
-            self._steps.append({"label": label, "state": "pending", "elapsed": 0.0, "detail": ""})
+            self._steps.append(
+                {"label": label, "state": "pending", "elapsed": 0.0, "detail": ""}
+            )
             index = len(self._steps) - 1
             if self._animated and self._started:
-                sys.stderr.write(self._render_line(self._steps[index]) + "\n")
+                sys.stderr.write(
+                    self._render_line(self._steps[index]) + "\n"
+                )
                 sys.stderr.flush()
         return index
 
@@ -673,23 +681,23 @@ class StepList:
         pending_glyph, _ = _step_symbols()
         state = step["state"]
         if state == "pending":
-            return click.style(f"  {pending_glyph} {label}", dim=True)
+            return click.style("  %s %s" % (pending_glyph, label), dim=True)
         if state == "active":
             return self._render_active_line(step)
         if state == "done":
-            line = "  " + click.style(f"{CHECK} {label}", fg=_fg("success"))
-            return line + click.style(" ({:.1f}s)".format(step["elapsed"]), dim=True)
+            line = "  " + click.style("%s %s" % (CHECK, label), fg=_fg("success"))
+            return line + click.style(" (%.1fs)" % step["elapsed"], dim=True)
         # failed
-        line = "  " + click.style(f"{CROSS} {label}", fg=_fg("error"))
+        line = "  " + click.style("%s %s" % (CROSS, label), fg=_fg("error"))
         if step["detail"]:
-            line += click.style(" — {}".format(step["detail"]), fg=_fg("error"))
+            line += click.style(" — %s" % step["detail"], fg=_fg("error"))
         return line
 
     def _render_active_line(self, step, glyph=None):
         """Render the active step line, optionally with an animation glyph."""
         if glyph is None:
             _, glyph = _step_symbols()
-        return "  " + click.style("{} {}".format(glyph, step["label"]), fg=_fg("active"))
+        return "  " + click.style("%s %s" % (glyph, step["label"]), fg=_fg("active"))
 
     def _draw_line_at(self, index, text):
         """Write *text* over the step line at *index*.
@@ -700,10 +708,10 @@ class StepList:
         up = len(self._steps) - 1 - index
         stream = sys.stderr
         if up > 0:
-            stream.write(chr(27) + f"[{up}A")
+            stream.write("\x1b[%dA" % up)
         stream.write("\r\x1b[K" + text)
         if up > 0:
-            stream.write(chr(27) + f"[{up}B")
+            stream.write("\x1b[%dB" % up)
         stream.flush()
 
     def _redraw(self, index):
@@ -722,7 +730,9 @@ class StepList:
         self._anim_index = index
         self._frame = 0
         self._anim_stop.clear()
-        self._anim_thread = threading.Thread(target=self._animate_loop, daemon=True)
+        self._anim_thread = threading.Thread(
+            target=self._animate_loop, daemon=True
+        )
         self._anim_thread.start()
 
     def _stop_animation(self):
@@ -751,13 +761,15 @@ class StepList:
                 if step["state"] != "active":
                     break
                 self._frame = (self._frame + 1) % len(frames)
-                self._draw_line_at(index, self._render_active_line(step, frames[self._frame]))
+                self._draw_line_at(
+                    index, self._render_active_line(step, frames[self._frame])
+                )
 
     def _plain_done_line(self, step):
         mark = CHECK if step["state"] == "done" else CROSS
-        text = "{} {} ({:.1f}s)".format(mark, step["label"], step["elapsed"])
+        text = "%s %s (%.1fs)" % (mark, step["label"], step["elapsed"])
         if step["state"] == "failed" and step["detail"]:
-            text += " — {}".format(step["detail"])
+            text += " — %s" % step["detail"]
         click.echo(text, err=True)
 
     # -- public transitions ----------------------------------------------
@@ -779,7 +791,9 @@ class StepList:
         step = self._steps[index]
         started = step.pop("_start", None)
         step["state"] = "done"
-        step["elapsed"] = time.monotonic() - started if started else 0.0
+        step["elapsed"] = (
+            time.monotonic() - started if started else 0.0
+        )
         step["detail"] = detail
         if self._animated:
             self._redraw(index)
@@ -794,7 +808,9 @@ class StepList:
         step = self._steps[index]
         started = step.pop("_start", None)
         step["state"] = "failed"
-        step["elapsed"] = time.monotonic() - started if started else 0.0
+        step["elapsed"] = (
+            time.monotonic() - started if started else 0.0
+        )
         step["detail"] = detail
         if self._animated:
             self._redraw(index)
@@ -808,7 +824,9 @@ class StepList:
             if step["state"] == "active":
                 step["state"] = "failed"
                 started = step.pop("_start", None)
-                step["elapsed"] = time.monotonic() - started if started else 0.0
+                step["elapsed"] = (
+                    time.monotonic() - started if started else 0.0
+                )
                 if self._animated:
                     self._redraw(self._steps.index(step))
                 else:

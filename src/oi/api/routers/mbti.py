@@ -604,7 +604,7 @@ class TestSubmitRequest(BaseModel):
         description='Map of question_id (str) -> "A" or "B"',
     )
     auto_apply: bool = Field(default=False)
-    language: str = Field(default="zh")
+    language: str = Field(default="id")
 
 
 class TestResultResponse(BaseModel):
@@ -730,7 +730,7 @@ async def submit_test(
 
 class ApplyRequest(BaseModel):
     code: str
-    language: str = Field(default="zh")
+    language: str = Field(default="id")
 
 
 class ApplyResponse(BaseModel):

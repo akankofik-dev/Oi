@@ -11,7 +11,6 @@ from oi.infra.connectors.gateway.adapters import (
     feishu_cli,
     fliggy,
     meituan_travel,
-    obsidian_cli,
     qq_mail,
     qq_music,
     tencent_ima,
@@ -45,7 +44,6 @@ _ADAPTERS: dict[str, GatewayAdapter] = {
     "wechat-reading": wechat_reading,
     "feishu-cli": feishu_cli,
     "wecom-cli": wecom_cli,
-    "obsidian-cli": obsidian_cli,
     "weknora": weknora,
 }
 

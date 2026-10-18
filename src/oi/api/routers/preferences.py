@@ -57,7 +57,7 @@ class SidebarNavLayoutModel(BaseModel):
 
 
 class PreferencesResponse(BaseModel):
-    locale: str = Field(description="UI locale: `zh` or `en`.")
+    locale: str = Field(description="UI locale: `en` or `id`.")
     remote_browser_bookmarks: list[RemoteBrowserBookmarkModel] = Field(
         default_factory=list,
         description="Saved URLs for the remote-browser page.",
@@ -78,7 +78,7 @@ class PreferencesResponse(BaseModel):
 
 
 class PatchPreferencesBody(BaseModel):
-    locale: str | None = Field(default=None, description="UI locale: `zh` or `en`.")
+    locale: str | None = Field(default=None, description="UI locale: `en` or `id`.")
     remote_browser_bookmarks: list[RemoteBrowserBookmarkModel] | None = Field(
         default=None,
         description="Replace remote-browser bookmarks (max 12).",

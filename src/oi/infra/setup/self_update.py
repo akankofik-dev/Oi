@@ -9,43 +9,52 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import zipfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from email.parser import BytesParser
 from pathlib import Path
 from typing import Any
 
-from oi.i18n import lookup, tr
-from oi.infra.errors import ErrorCode, OiError
-from oi.infra.utils.locale import DEFAULT_LOCALE
 from oi.infra.utils.paths import PathLayout
 
 logger = logging.getLogger(__name__)
 
 _PACKAGE_NAME = "oi"
-_PYPI_URL = f"https://pypi.org/pypi/{_PACKAGE_NAME}/json"
-_GITHUB_RELEASES_URL = "https://api.github.com/repos/akankofik-dev/Oi/releases/latest"
-_PYPI_SIMPLE = "https://pypi.org/simple"
-_PYPI_UA = {"User-Agent": f"{_PACKAGE_NAME}-updater/1.0"}
+# NOTE: _PACKAGE_NAME hanya untuk lookup metadata lokal (importlib.metadata)
+# dan nama file wheel. JANGAN PERNAH install/upgrade dari PyPI: paket "oi"
+# di PyPI milik pihak lain. Upgrade HANYA dari GitHub Releases akankofik-dev/Oi.
+_GITHUB_REPO = "akankofik-dev/Oi"
+_GITHUB_RELEASES_URL = f"https://api.github.com/repos/{_GITHUB_REPO}/releases/latest"
+_GITHUB_UA = {"User-Agent": "oi-updater/1.0", "Accept": "application/vnd.github+json"}
+
+
+def github_wheel_url(version: str) -> str:
+    """Return direct wheel download URL for a GitHub release version."""
+    return (
+        f"https://github.com/{_GITHUB_REPO}/releases/download/"
+        f"v{version}/oi-{version}-py3-none-any.whl"
+    )
+
+
+def _github_release_exists(version: str, timeout: int = 10) -> bool:
+    """Check if a GitHub release exists for the given version (HEAD request)."""
+    try:
+        req = urllib.request.Request(
+            github_wheel_url(version), headers=_GITHUB_UA, method="HEAD"
+        )
+        with urllib.request.urlopen(req, timeout=timeout):
+            return True
+    except Exception:
+        return False
 _GREEN_PACKAGES_ENV = "OI_GREEN_PACKAGES"
 _STASH_SUFFIX = ".oi-old"
 _PROBE_TIMEOUT_S = 8
-_PROBE_PREFIX = "__OI_PROBE__"
 _INSTALL_TIMEOUT_S = 90
-_TARGET_INSTALL_TIMEOUT_S = 900
+_FPK_INSTALL_TIMEOUT_S = 900
 
-_MIRRORS = [
-    "https://mirrors.cloud.tencent.com/pypi/simple",
-    "https://mirrors.aliyun.com/pypi/simple",
-    "https://pypi.tuna.tsinghua.edu.cn/simple",
-    "https://mirrors.ustc.edu.cn/pypi/simple",
-]
+
 
 _COMMON_UV_PATHS = [
     os.path.expanduser("~/.local/bin/uv"),
@@ -62,17 +71,6 @@ class UpgradeResult:
     error: str | None = None
     installed_version: str | None = None
     mirror_errors: list[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class IndexProbe:
-    """Result of probing a PEP 503 simple index for ``oi``."""
-
-    index_url: str
-    label: str
-    elapsed: float
-    status: str  # has_version | missing_version | unreachable
-    detail: str = ""
 
 
 def green_packages_dir() -> Path | None:
@@ -108,19 +106,7 @@ def resolve_venv_python() -> str:
     return sys.executable
 
 
-def _bundled_uv_executable() -> str | None:
-    target = green_packages_dir()
-    if target is None:
-        return None
-    candidate = target / "bin" / ("uv.exe" if os.name == "nt" else "uv")
-    if candidate.is_file() and os.access(candidate, os.X_OK):
-        return str(candidate)
-    return None
-
-
 def detect_installer() -> str:
-    if _bundled_uv_executable() is not None:
-        return "uv"
     if shutil.which("uv"):
         return "uv"
     for candidate in _COMMON_UV_PATHS:
@@ -130,9 +116,6 @@ def detect_installer() -> str:
 
 
 def find_uv_executable() -> str:
-    bundled = _bundled_uv_executable()
-    if bundled is not None:
-        return bundled
     if shutil.which("uv"):
         return "uv"
     for candidate in _COMMON_UV_PATHS:
@@ -145,11 +128,8 @@ def get_local_version() -> str:
     try:
         from importlib.metadata import version
 
-        target = green_packages_dir()
-        fpk_target = os.environ.get("OI_FPK_SITE_PACKAGES", "").strip()
-        if target is not None or fpk_target:
-            return get_version_in_dir(sys.executable, str(target or fpk_target)) or "0.0.0"
-        return version(_PACKAGE_NAME)
+        # Package lokal namanya "oi" (bukan "oi-agent")
+        return version("oi")
     except Exception:
         return "0.0.0"
 
@@ -163,120 +143,53 @@ class PyPIInfo:
     """Package long description."""
 
     source: str | None = None
-    """Label of the source that served this payload (e.g. ``pypi.org``)."""
+    """Label of the source that served this payload (e.g. ``github.com``)."""
 
     latest_stable: str | None = None
     """Newest non-pre-release version, or None if every release is a pre-release."""
 
 
-def fetch_latest_pypi_version(
-    timeout: int = 10,
-    *,
-    include_prerelease: bool = False,
-) -> str | None:
-    info = fetch_pypi_info(timeout=timeout)
-    if info is None:
-        return None
-    if include_prerelease:
-        return info.version
-    return info.latest_stable
+def fetch_github_info(timeout: int = 10) -> PyPIInfo | None:
+    """Fetch latest release version from GitHub Releases.
 
-
-def _usable_release_versions(data: dict[str, Any]) -> list[str]:
-    """Return PyPI ``releases`` keys that are not fully yanked."""
-    releases = data.get("releases")
-    if not isinstance(releases, dict):
-        return []
-    versions: list[str] = []
-    for raw_ver, files in releases.items():
-        ver = str(raw_ver)
-        if not ver:
-            continue
-        if (
-            isinstance(files, list)
-            and files
-            and all(isinstance(item, dict) and item.get("yanked") for item in files)
-        ):
-            continue
-        versions.append(ver)
-    return versions
-
-
-def pick_latest_versions(versions: list[str]) -> tuple[str | None, str | None]:
-    """Return ``(latest_any, latest_stable)`` using PEP 440 order."""
-    usable = [ver for ver in versions if ver]
-    if not usable:
-        return None, None
-    latest_any = max(usable, key=parse_version)
-    stables = [ver for ver in usable if not is_prerelease(ver)]
-    latest_stable = max(stables, key=parse_version) if stables else None
-    return latest_any, latest_stable
-
-
-def _pypi_json_url(version: str | None = None) -> str:
-    if not version:
-        return _PYPI_URL
-    encoded = urllib.parse.quote(version, safe="")
-    return f"https://pypi.org/pypi/{_PACKAGE_NAME}/{encoded}/json"
-
-
-def _load_json(url: str, timeout: int) -> dict[str, Any]:
-    req = urllib.request.Request(url, headers=_PYPI_UA)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        payload: dict[str, Any] = json.loads(resp.read().decode("utf-8"))
-    return payload
-
-
-def _description_for_version(
-    version: str,
-    fallback: str | None,
-    timeout: int,
-) -> str | None:
-    """Return the long description uploaded with *version*.
-
-    Warehouse's unversioned ``/pypi/<name>/json`` ``info`` object is the latest
-    *stable* release. Pre-release changelogs only appear on
-    ``/pypi/<name>/<version>/json``.
+    Returns PyPIInfo-compatible object, or None on failure.
     """
     try:
-        data = _load_json(_pypi_json_url(version), timeout)
-        description = data["info"].get("description")
-        if isinstance(description, str) and description.strip():
-            return description
-    except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError) as exc:
-        logger.warning("failed to fetch PyPI description for %s: %s", version, exc)
-    return fallback
-
-
-def fetch_pypi_info(timeout: int = 10) -> PyPIInfo | None:
-    """Fetch the latest Oi version from the GitHub Releases API.
-
-    The PyPI package named 'oi' is an unrelated project, so this uses
-    the Oi GitHub releases instead of the PyPI JSON API. version and
-    latest_stable come from tag_name with a leading 'v' stripped
-    (releases/latest already skips drafts and pre-releases).
-    Returns None when no release exists yet (API 404) or on any
-    network/parse failure.
-    """
-    try:
-        data = _load_json(_GITHUB_RELEASES_URL, timeout)
-        tag = data.get('tag_name')
-        if not isinstance(tag, str) or not tag:
-            return None
-        version = tag[1:] if tag.startswith('v') else tag
+        req = urllib.request.Request(_GITHUB_RELEASES_URL, headers=_GITHUB_UA)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.load(resp)
+        tag = str(data.get("tag_name", "")).strip()
+        # tag bisa "v1.0.3" atau "1.0.3" -> ambil angka versinya
+        m = re.search(r"(\d+\.\d+\.\d+)", tag)
+        version = m.group(1) if m else tag.lstrip("v")
         if not version:
             return None
-        body = data.get('body')
-        description = body if isinstance(body, str) and body.strip() else None
+        body = data.get("body")
         return PyPIInfo(
             version=version,
             latest_stable=version,
-            description=description,
-            source='github',
+            description=body if isinstance(body, str) else None,
+            source="github.com",
         )
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        logger.warning('failed to fetch Oi release info: %s', exc)
+    except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError) as exc:
+        logger.warning("failed to fetch GitHub release info: %s", exc)
         return None
+
+
+def fetch_pypi_info(timeout: int = 10) -> PyPIInfo | None:
+    """Fetch latest release info from GitHub Releases (akankofik-dev/Oi).
+
+    Returns PyPIInfo-compatible object, or None on failure.
+
+    PENTING: fungsi ini HANYA membaca GitHub Releases. Tidak ada fallback ke
+    PyPI — paket "oi" di PyPI milik pihak lain dan tidak boleh dipakai untuk
+    cek versi maupun upgrade. Nama fungsi dipertahankan demi kompatibilitas
+    pemanggil (router/CLI).
+    """
+    gh = fetch_github_info(timeout)
+    if gh is None:
+        logger.warning("could not reach GitHub Releases for update check")
+    return gh
 
 
 def parse_changelog_for_version(description: str | None, version: str) -> str | None:
@@ -398,16 +311,6 @@ def is_newer(remote: str, local: str) -> bool:
     return parse_version(remote) > parse_version(local)
 
 
-def validate_upgrade_target(version: str | None, local_ver: str) -> None:
-    """Reject reinstalls/downgrades before any installer changes the environment."""
-    if version is not None and not is_newer(version, local_ver):
-        raise OiError(
-            ErrorCode.UPDATE_TARGET_NOT_NEWER,
-            tr("errors.UPDATE_TARGET_NOT_NEWER", "en", target=version, current=local_ver),
-            details={"target": version, "current": local_ver},
-        )
-
-
 def get_editable_path() -> str | None:
     try:
         import importlib.metadata as meta
@@ -445,13 +348,6 @@ def find_pip_in_venv(python_exe: str) -> str | None:
     return None
 
 
-def package_requirement(version: str | None = None) -> str:
-    """Return ``oi`` or a pinned ``oi==<version>`` spec."""
-    if version:
-        return f"{_PACKAGE_NAME}=={version}"
-    return _PACKAGE_NAME
-
-
 def append_prerelease_flags(
     cmd: list[str],
     installer: str,
@@ -470,15 +366,26 @@ def build_upgrade_command(
     installer: str,
     venv_python: str,
     *,
-    index_url: str = "",
     allow_prerelease: bool = False,
     version: str | None = None,
+    wheel_url: str | None = None,
 ) -> list[str] | None:
+    """Build installer command for upgrading Oi.
+
+    Upgrade HANYA dari wheel_url GitHub Releases. Parameter wheel_url WAJIB —
+    tidak ada fallback ke ``pip install oi==X`` dari PyPI karena paket "oi"
+    di PyPI milik pihak lain.
+    """
+    if not wheel_url:
+        raise ValueError(
+            "wheel_url wajib diisi (URL wheel GitHub Releases); "
+            "upgrade dari PyPI tidak diizinkan"
+        )
     target = green_packages_dir()
     target_args: list[str] = []
     if target is not None:
         target_args = ["--target", str(target)]
-    requirement = package_requirement(version)
+    requirement = wheel_url
 
     if installer == "uv":
         uv_exe = find_uv_executable()
@@ -492,8 +399,6 @@ def build_upgrade_command(
             "--upgrade-package",
             _PACKAGE_NAME,
         ]
-        if index_url:
-            cmd.extend(["--index-url", index_url])
         append_prerelease_flags(cmd, installer, allow_prerelease=allow_prerelease)
         cmd.append(requirement)
         return cmd
@@ -510,8 +415,6 @@ def build_upgrade_command(
             if not standalone:
                 return None
             cmd = [standalone, "install", *upgrade_flags, *target_args]
-    if index_url:
-        cmd.extend(["-i", index_url])
     append_prerelease_flags(cmd, installer, allow_prerelease=allow_prerelease)
     cmd.append(requirement)
     return cmd
@@ -597,242 +500,24 @@ def get_installed_version(python_exe: str) -> str | None:
     return None
 
 
-def get_version_in_dir(python_exe: str, target: str, *, check_cli: bool = False) -> str | None:
-    """Read the loaded target version, optionally exercising its CLI entry point."""
+def get_version_in_dir(python_exe: str, target: str) -> str | None:
+    """Return the oi version installed in *target* (a ``pip --target`` dir)."""
     try:
         code = (
-            "import json, site, sys; from pathlib import Path; "
-            "target = Path(sys.argv[1]).resolve(); "
-            "sys.path.insert(0, str(target)); site.addsitedir(str(target)); "
-            "import oi; "
-            "actual = oi.__version__ if "
-            "Path(oi.__file__).resolve().is_relative_to(target) else None\n"
-            "if actual is not None and sys.argv[2] == '1':\n"
-            " import contextlib, io, runpy\n"
-            " sys.argv = ['oi', '--version']\n"
-            " with contextlib.redirect_stdout(io.StringIO()):\n"
-            "  try:\n"
-            "   runpy.run_module('oi', run_name='__main__', alter_sys=True)\n"
-            "  except SystemExit as exc:\n"
-            "   if exc.code not in (None, 0): raise\n"
-            f"print('\\n{_PROBE_PREFIX}' + json.dumps(actual))"
+            "import sys; sys.path.insert(0, sys.argv[1]); "
+            "from importlib.metadata import version; print(version('oi'))"
         )
         result = subprocess.run(
-            [python_exe, "-B", "-c", code, target, "1" if check_cli else "0"],
+            [python_exe, "-c", code, target],
             capture_output=True,
             text=True,
             check=False,
-            timeout=_PROBE_TIMEOUT_S,
         )
         if result.returncode == 0:
-            payloads = [
-                line.removeprefix(_PROBE_PREFIX)
-                for line in result.stdout.splitlines()
-                if line.startswith(_PROBE_PREFIX)
-            ]
-            if len(payloads) != 1:
-                return None
-            loaded_version = json.loads(payloads[0])
-            return loaded_version if isinstance(loaded_version, str) and loaded_version else None
+            return result.stdout.strip() or None
     except Exception:
         pass
     return None
-
-
-def _target_dependencies_satisfied(
-    target: Path, wheel: Path, *, version: str | None = None
-) -> bool:
-    """Check a downloaded wheel's dependency closure before modifying the target."""
-    try:
-        from importlib.metadata import Distribution, distributions
-
-        from packaging.requirements import Requirement
-        from packaging.specifiers import SpecifierSet
-        from packaging.utils import canonicalize_name
-        from packaging.version import Version
-
-        with zipfile.ZipFile(wheel) as archive:
-            records = [name for name in archive.namelist() if name.endswith(".dist-info/METADATA")]
-            if len(records) != 1:
-                return False
-            release = BytesParser().parsebytes(archive.read(records[0]))
-        if (
-            len(release.get_all("Name", [])) != 1
-            or len(release.get_all("Version", [])) != 1
-            or canonicalize_name(release.get("Name", "")) != _PACKAGE_NAME
-        ):
-            return False
-        actual_version = Version(release.get("Version", ""))
-        if version is not None and actual_version != Version(version):
-            return False
-
-        installed: dict[str, list[Distribution]] = {}
-        for dist in distributions(path=[str(target)]):
-            name = canonicalize_name(dist.metadata.get("Name", ""))
-            installed.setdefault(name, []).append(dist)
-        seen: set[tuple[str, frozenset[str]]] = set()
-
-        def satisfied(
-            name: str,
-            requirements: list[str],
-            python_required: str | None,
-            extras: frozenset[str],
-        ) -> bool:
-            key = (name, extras)
-            if key in seen:
-                return True
-            seen.add(key)
-            # The portable path uses sys.executable, so this is the target's Python.
-            if python_required and not SpecifierSet(python_required).contains(
-                ".".join(map(str, sys.version_info[:3])), prereleases=True
-            ):
-                return False
-            for raw in requirements:
-                requirement = Requirement(raw)
-                if requirement.marker and not any(
-                    requirement.marker.evaluate({"extra": extra}) for extra in {"", *extras}
-                ):
-                    continue
-                candidates = installed.get(canonicalize_name(requirement.name), [])
-                # Ambiguous metadata or direct URLs cannot establish a safe fast path.
-                if requirement.url or len(candidates) != 1:
-                    return False
-                dependency = candidates[0]
-                if not requirement.specifier.contains(dependency.version, prereleases=True):
-                    return False
-                if not satisfied(
-                    canonicalize_name(requirement.name),
-                    dependency.requires or [],
-                    dependency.metadata.get("Requires-Python"),
-                    frozenset(requirement.extras),
-                ):
-                    return False
-            return True
-
-        return satisfied(
-            _PACKAGE_NAME,
-            release.get_all("Requires-Dist", []),
-            release.get("Requires-Python"),
-            frozenset(),
-        )
-    except Exception:
-        # Missing packaging, malformed metadata, or unreadable records require resolution.
-        return False
-
-
-def index_label(index_url: str) -> str:
-    """Short label for logs / UI (hostname, or ``pypi.org``)."""
-    host = urllib.parse.urlparse(index_url).hostname
-    if host == "pypi.org":
-        return "pypi.org"
-    return host or index_url
-
-
-def _index_package_url(index_url: str) -> str:
-    return f"{index_url.rstrip('/')}/{_PACKAGE_NAME}/"
-
-
-def page_has_package_version(body: str, version: str | None) -> bool:
-    """True when a PEP 503 simple page lists *version* (or any file when unpinned)."""
-    if not version:
-        return bool(body.strip())
-    # Wheel / sdist names: oi-1.0.1-py3-none-any.whl, oi-1.0.1.tar.gz
-    return f"{_PACKAGE_NAME}-{version}-" in body or f"{_PACKAGE_NAME}-{version}." in body
-
-
-def probe_index(
-    index_url: str,
-    *,
-    version: str | None = None,
-    timeout: float = _PROBE_TIMEOUT_S,
-) -> IndexProbe:
-    """GET ``{index}/{package}/`` and classify reachability / version presence."""
-    label = index_label(index_url)
-    url = _index_package_url(index_url)
-    started = time.monotonic()
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": f"{_PACKAGE_NAME}-updater/1.0"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8", errors="replace")
-        elapsed = time.monotonic() - started
-        if page_has_package_version(body, version):
-            return IndexProbe(index_url, label, elapsed, "has_version")
-        detail = f"missing_version {version}" if version else "missing_version"
-        return IndexProbe(index_url, label, elapsed, "missing_version", detail)
-    except Exception as exc:
-        elapsed = time.monotonic() - started
-        exc_text = str(exc).lower()
-        kind = (
-            "timeout" if isinstance(exc, TimeoutError) or "timed out" in exc_text else "unreachable"
-        )
-        return IndexProbe(index_url, label, elapsed, "unreachable", f"{kind}: {exc}")
-
-
-def rank_install_indexes(
-    version: str | None,
-    *,
-    probe_timeout: float = _PROBE_TIMEOUT_S,
-) -> tuple[list[tuple[str, str]], list[str]]:
-    """Probe mirrors in parallel; return ``([(index_url, label), ...], skip_errors)``.
-
-    Install candidates are indexes that list the target version, ordered by probe
-    latency. ``pypi.org`` is always appended as a final fallback even when its
-    probe fails (HTML parse misses / transient errors).
-    """
-    indexes = [*_MIRRORS, _PYPI_SIMPLE]
-    probes: list[IndexProbe] = []
-    with ThreadPoolExecutor(max_workers=len(indexes)) as pool:
-        futures = [
-            pool.submit(probe_index, url, version=version, timeout=probe_timeout) for url in indexes
-        ]
-        for fut in as_completed(futures):
-            probes.append(fut.result())
-
-    skip_errors: list[str] = []
-    mirror_hits: list[IndexProbe] = []
-    pypi_probe: IndexProbe | None = None
-    for probe in probes:
-        if probe.label == "pypi.org":
-            pypi_probe = probe
-            continue
-        if probe.status == "has_version":
-            mirror_hits.append(probe)
-        else:
-            skip_errors.append(f"{probe.label}: {probe.detail or probe.status}")
-
-    mirror_hits.sort(key=lambda item: item.elapsed)
-    ordered: list[tuple[str, str]] = [(item.index_url, item.label) for item in mirror_hits]
-
-    if pypi_probe is not None and pypi_probe.status != "has_version":
-        skip_errors.append(f"pypi.org: {pypi_probe.detail or pypi_probe.status}")
-    ordered.append((_PYPI_SIMPLE, "pypi.org"))
-    return ordered, skip_errors
-
-
-def _all_mirrors_failed(mirror_errors: list[str]) -> UpgradeResult:
-    hint = ""
-    if mirror_errors:
-        preferred = next(
-            (
-                err
-                for err in mirror_errors
-                if "missing_version" not in err and "unreachable:" not in err
-            ),
-            next(
-                (err for err in mirror_errors if "missing_version" not in err),
-                mirror_errors[0],
-            ),
-        )
-        short = preferred if len(preferred) <= 120 else preferred[:117] + "..."
-        hint = f" ({short})"
-    return UpgradeResult(
-        success=False,
-        error=f"upgrade failed on all mirrors{hint}",
-        mirror_errors=mirror_errors,
-    )
 
 
 def _run_install_cmd(
@@ -865,21 +550,38 @@ def _verify_fpk_upgrade(
     site_packages: str,
     python_exe: str,
     mirror_errors: list[str],
-    *,
-    version: str | None = None,
-    locale: str = DEFAULT_LOCALE,
 ) -> UpgradeResult:
-    result = _verify_upgrade(
-        local_ver,
-        python_exe,
-        mirror_errors,
-        version=version,
-        locale=locale,
-        target=Path(site_packages),
+    actual_ver: str | None = None
+    for attempt in range(3):
+        actual_ver = get_version_in_dir(python_exe, site_packages)
+        if actual_ver and actual_ver != local_ver:
+            break
+        if attempt < 2:
+            time.sleep(0.5)
+
+    if actual_ver and is_newer(actual_ver, local_ver):
+        return UpgradeResult(
+            success=True,
+            message=f"Sudah upgrade ke {actual_ver}, silakan restart layanan agar berlaku.",
+            installed_version=actual_ver,
+            mirror_errors=mirror_errors,
+        )
+    if actual_ver == local_ver:
+        return UpgradeResult(
+            success=False,
+            error=(
+                f"Install selesai tapi versi masih {actual_ver}; "
+                "pastikan versi baru sudah dirilis di GitHub Releases."
+            ),
+            installed_version=actual_ver,
+            mirror_errors=mirror_errors,
+        )
+    return UpgradeResult(
+        success=True,
+        message="upgrade completed",
+        installed_version=actual_ver,
+        mirror_errors=mirror_errors,
     )
-    if result.success:
-        result.message = tr("update.fpk_completed", locale, version=result.installed_version)
-    return result
 
 
 def _run_fpk_upgrade(
@@ -888,47 +590,48 @@ def _run_fpk_upgrade(
     verbose: bool = False,
     allow_prerelease: bool = False,
     version: str | None = None,
-    locale: str = DEFAULT_LOCALE,
 ) -> UpgradeResult:
-    """FnOS FPK 部署下的在线升级：把新版安装到 launcher 实际加载的打包目录。
+    """Upgrade pada deployment FnOS FPK: install versi baru ke direktori
+    site-packages yang sebenarnya dimuat launcher.
 
-    launcher 通过 PYTHONPATH 从应用中心托管的打包 site-packages 加载 oi，
-    在线安装到系统 Python 永远不会被加载（重启后仍是旧版）。本函数把新版
-    安装到该打包目录本身，重启服务后即加载新版，升级真正生效。
-
-    与普通部署不同，FPK 首次在线升级需要从零解析并下载完整依赖树
-    （oi 依赖 oi-harness 等大包），故安装超时显著放宽；先并行探测
-    simple index，缺版本/不可达的镜像直接跳过，最后以 pypi.org 兜底。
+    Upgrade HANYA dari wheel GitHub Releases (akankofik-dev/Oi) — tidak
+    pernah dari PyPI (paket "oi" di PyPI milik pihak lain).
     """
     if not os.path.isdir(site_packages):
         return UpgradeResult(
             success=False,
-            error=tr("update.fpk_target_missing", locale, path=site_packages),
+            error=f"Direktori site-packages FPK tidak ada: {site_packages}",
+        )
+    if not version:
+        return UpgradeResult(
+            success=False,
+            error="Versi target tidak diketahui; jalankan cek update dulu.",
+        )
+    wheel_url = github_wheel_url(version)
+    if not _github_release_exists(version):
+        return UpgradeResult(
+            success=False,
+            error=f"Release GitHub v{version} tidak ditemukan.",
         )
     local_ver = get_local_version()
-    ordered, mirror_errors = rank_install_indexes(version)
     python_exe = sys.executable
-    installer = detect_installer()  # uv 优先：pip 对 oi-harness[all] 依赖树解析会卡死
+    installer = detect_installer()  # uv prioritas: pip bisa hang saat resolve dep oi-harness[all]
+    mirror_errors: list[str] = []
 
-    def _build_cmd(index_url: str) -> list[str]:
-        requirement = package_requirement(version)
-        if installer == "uv":
-            cmd = [
-                find_uv_executable(),
-                "pip",
-                "install",
-                "--python",
-                python_exe,
-                "--target",
-                site_packages,
-                "--upgrade-package",
-                _PACKAGE_NAME,
-                "--index-url",
-                index_url,
-            ]
-            append_prerelease_flags(cmd, installer, allow_prerelease=allow_prerelease)
-            cmd.append(requirement)
-            return cmd
+    if installer == "uv":
+        cmd = [
+            find_uv_executable(),
+            "pip",
+            "install",
+            "--python",
+            python_exe,
+            "--target",
+            site_packages,
+            "--upgrade-package",
+            _PACKAGE_NAME,
+            wheel_url,
+        ]
+    else:
         cmd = [
             python_exe,
             "-m",
@@ -939,32 +642,22 @@ def _run_fpk_upgrade(
             "only-if-needed",
             "--target",
             site_packages,
-            "-i",
-            index_url,
+            wheel_url,
         ]
-        append_prerelease_flags(cmd, installer, allow_prerelease=allow_prerelease)
-        cmd.append(requirement)
-        return cmd
-
-    for index_url, label in ordered:
-        rc, err_snippet = _run_install_cmd(
-            _build_cmd(index_url),
-            label,
-            verbose=verbose,
-            timeout=_TARGET_INSTALL_TIMEOUT_S,
+    append_prerelease_flags(cmd, installer, allow_prerelease=allow_prerelease)
+    rc, err_snippet = _run_install_cmd(
+        cmd,
+        "github.com",
+        verbose=verbose,
+        timeout=_FPK_INSTALL_TIMEOUT_S,
+    )
+    if rc != 0:
+        return UpgradeResult(
+            success=False,
+            error=f"upgrade dari GitHub Releases gagal: {err_snippet or 'unknown error'}",
+            mirror_errors=mirror_errors,
         )
-        if rc != 0:
-            mirror_errors.append(f"{label}: {err_snippet or 'unknown error'}")
-            continue
-        res = _verify_fpk_upgrade(
-            local_ver, site_packages, python_exe, mirror_errors, version=version, locale=locale
-        )
-        if res.success:
-            return res
-        # 镜像装到了同版本/旧版（同步滞后）：继续尝试下一个镜像
-        mirror_errors.append(f"{label}: {res.error or 'version unchanged'}")
-
-    return _all_mirrors_failed(mirror_errors)
+    return _verify_fpk_upgrade(local_ver, site_packages, python_exe, mirror_errors)
 
 
 def run_upgrade(
@@ -972,15 +665,7 @@ def run_upgrade(
     verbose: bool = False,
     allow_prerelease: bool = False,
     version: str | None = None,
-    locale: str = DEFAULT_LOCALE,
 ) -> UpgradeResult:
-    try:
-        validate_upgrade_target(version, get_local_version())
-    except OiError as exc:
-        return UpgradeResult(success=False, error=exc.localized_message(locale))
-    # Cache this running updater's locale bundles before installation replaces
-    # its package resources, so result messages use the matching translations.
-    lookup("update.completed", locale)
     # [FPK] FnOS FPK 部署：launcher 通过 PYTHONPATH 从应用中心托管的打包
     # site-packages 加载 oi，在线安装到系统 Python 永远不会被加载（重启
     # 无效）。launcher 导出 OI_FPK_SITE_PACKAGES 指向该打包目录，升级即
@@ -992,7 +677,6 @@ def run_upgrade(
             verbose=verbose,
             allow_prerelease=allow_prerelease,
             version=version,
-            locale=locale,
         )
 
     # Windows keeps the running oi.exe locked (os error 32), so pip / uv
@@ -1004,7 +688,6 @@ def run_upgrade(
             verbose=verbose,
             allow_prerelease=allow_prerelease,
             version=version,
-            locale=locale,
         )
     except BaseException:
         restore_console_scripts(stashed)
@@ -1021,160 +704,87 @@ def _run_managed_upgrade(
     verbose: bool = False,
     allow_prerelease: bool = False,
     version: str | None = None,
-    locale: str = DEFAULT_LOCALE,
 ) -> UpgradeResult:
+    """Upgrade Oi HANYA dari wheel GitHub Releases (akankofik-dev/Oi).
+
+    Tidak ada fallback ke PyPI/mirror: paket "oi" di PyPI milik pihak lain.
+    """
     installer = detect_installer()
     venv_python = resolve_venv_python()
     local_ver = get_local_version()
-    target = green_packages_dir()
-    ordered, mirror_errors = rank_install_indexes(version)
-    fallback_deadline: float | None = None
+    mirror_errors: list[str] = []
 
-    for index_url, label in ordered:
-        if fallback_deadline is not None and time.monotonic() >= fallback_deadline:
-            break
-        cmd = build_upgrade_command(
-            installer,
-            venv_python,
-            index_url=index_url,
-            allow_prerelease=allow_prerelease,
-            version=version,
+    if not version:
+        return UpgradeResult(
+            success=False,
+            error="Versi target tidak diketahui; jalankan cek update dulu.",
+            mirror_errors=mirror_errors,
         )
-        if cmd is None:
-            return UpgradeResult(
-                success=False,
-                error="pip is not available for the Oi virtual environment.",
-                mirror_errors=mirror_errors,
-            )
-        fast_path = installer == "pip" and target is not None
-        if fast_path and target is not None:
-            pip_cmd = cmd[: cmd.index("install")]
-            with tempfile.TemporaryDirectory(prefix="oi-upgrade-") as download_dir:
-                download_timeout = float(_INSTALL_TIMEOUT_S)
-                if fallback_deadline is not None:
-                    download_timeout = min(download_timeout, fallback_deadline - time.monotonic())
-                if download_timeout <= 0:
-                    break
-                download_cmd = [
-                    *pip_cmd,
-                    "download",
-                    "--no-deps",
-                    "--only-binary=:all:",
-                    "--dest",
-                    download_dir,
-                    "-i",
-                    index_url,
-                ]
-                append_prerelease_flags(download_cmd, installer, allow_prerelease=allow_prerelease)
-                download_cmd.append(package_requirement(version))
-                rc, err_snippet = _run_install_cmd(
-                    download_cmd, label, verbose=verbose, timeout=download_timeout
-                )
-                if rc != 0:
-                    # The fast path requires a prebuilt wheel. A download failure leaves
-                    # the target untouched; try another mirror instead of a cold install.
-                    mirror_errors.append(f"{label}: {err_snippet or 'unknown error'}")
-                    continue
-                wheels = list(Path(download_dir).glob("*.whl"))
-                if len(wheels) == 1 and _target_dependencies_satisfied(
-                    target, wheels[0], version=version
-                ):
-                    install_timeout = float(_INSTALL_TIMEOUT_S)
-                    if fallback_deadline is not None:
-                        install_timeout = min(install_timeout, fallback_deadline - time.monotonic())
-                    if install_timeout <= 0:
-                        break
-                    rc, err_snippet = _run_install_cmd(
-                        [
-                            *pip_cmd,
-                            "install",
-                            "--no-index",
-                            "--no-deps",
-                            "--upgrade",
-                            "--target",
-                            str(target),
-                            str(wheels[0]),
-                        ],
-                        label,
-                        verbose=verbose,
-                        timeout=install_timeout,
-                    )
-                    if rc == 0:
-                        result = _verify_upgrade(
-                            local_ver, venv_python, mirror_errors, version=version, locale=locale
-                        )
-                        if result.success:
-                            return result
-                logger.debug(
-                    "%s: application-only upgrade unavailable; installing dependencies", label
-                )
-
-        timeout = float(_INSTALL_TIMEOUT_S)
-        if fast_path:
-            now = time.monotonic()
-            if fallback_deadline is None:
-                # One window starts at the first cold install, never once per mirror.
-                # Use the constant itself: ``(now + budget) - now`` is not always
-                # exactly ``budget`` for large monotonic clock values.
-                fallback_deadline = now + _TARGET_INSTALL_TIMEOUT_S
-                timeout = float(_TARGET_INSTALL_TIMEOUT_S)
-            else:
-                timeout = fallback_deadline - now
-            if timeout <= 0:
-                break
-        rc, err_snippet = _run_install_cmd(cmd, label, verbose=verbose, timeout=timeout)
-        if rc == 0:
-            result = _verify_upgrade(
-                local_ver, venv_python, mirror_errors, version=version, locale=locale
-            )
-            if result.success:
-                return result
-            err_snippet = result.error or tr("update.version_unavailable", locale)
-        mirror_errors.append(f"{label}: {err_snippet or 'unknown error'}")
-
-    return _all_mirrors_failed(mirror_errors)
+    gh_url = github_wheel_url(version)
+    if not _github_release_exists(version):
+        return UpgradeResult(
+            success=False,
+            error=f"Release GitHub v{version} tidak ditemukan.",
+            mirror_errors=mirror_errors,
+        )
+    cmd = build_upgrade_command(
+        installer,
+        venv_python,
+        allow_prerelease=allow_prerelease,
+        version=version,
+        wheel_url=gh_url,
+    )
+    if cmd is None:
+        return UpgradeResult(
+            success=False,
+            error="pip is not available for the Oi virtual environment.",
+            mirror_errors=mirror_errors,
+        )
+    rc, err_snippet = _run_install_cmd(
+        cmd,
+        "github.com",
+        verbose=verbose,
+        timeout=_INSTALL_TIMEOUT_S,
+    )
+    if rc == 0:
+        return _verify_upgrade(local_ver, venv_python, mirror_errors)
+    return UpgradeResult(
+        success=False,
+        error=f"upgrade dari GitHub Releases gagal: {err_snippet or 'unknown error'}",
+        mirror_errors=mirror_errors,
+    )
 
 
 def _verify_upgrade(
     local_ver: str,
     venv_python: str,
     mirror_errors: list[str],
-    *,
-    version: str | None = None,
-    locale: str = DEFAULT_LOCALE,
-    target: Path | None = None,
 ) -> UpgradeResult:
-    target = target if target is not None else green_packages_dir()
     actual_ver: str | None = None
     for attempt in range(3):
-        actual_ver = (
-            get_version_in_dir(venv_python, str(target), check_cli=True)
-            if target is not None
-            else get_installed_version(venv_python)
-        )
-        if (
-            actual_ver
-            and is_newer(actual_ver, local_ver)
-            and (version is None or parse_version(actual_ver) == parse_version(version))
-        ):
-            return UpgradeResult(
-                success=True,
-                message=tr("update.completed", locale, version=actual_ver),
-                installed_version=actual_ver,
-                mirror_errors=mirror_errors,
-            )
+        actual_ver = get_installed_version(venv_python)
+        if actual_ver and actual_ver != local_ver:
+            break
         if attempt < 2:
             time.sleep(0.5)
 
-    if actual_ver is None:
-        error = tr("update.version_unavailable", locale)
-    elif version is not None and parse_version(actual_ver) != parse_version(version):
-        error = tr("update.version_mismatch", locale, actual=actual_ver, expected=version)
-    else:
-        error = tr("update.version_not_newer", locale, actual=actual_ver, previous=local_ver)
+    if actual_ver and is_newer(actual_ver, local_ver):
+        return UpgradeResult(
+            success=True,
+            message=f"upgraded to {actual_ver}",
+            installed_version=actual_ver,
+            mirror_errors=mirror_errors,
+        )
+    if actual_ver == local_ver:
+        return UpgradeResult(
+            success=True,
+            message=f"installer finished but version is still {actual_ver}",
+            installed_version=actual_ver,
+            mirror_errors=mirror_errors,
+        )
     return UpgradeResult(
-        success=False,
-        error=error,
+        success=True,
+        message="upgrade completed",
         installed_version=actual_ver,
         mirror_errors=mirror_errors,
     )

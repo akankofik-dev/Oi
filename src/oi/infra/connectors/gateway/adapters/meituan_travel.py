@@ -27,7 +27,7 @@ TOOLS: list[dict[str, Any]] = [
                 },
                 "city": {
                     "type": "string",
-                    "description": "City context, default 北京",
+                    "description": "Konteks kota, default Beijing",
                 },
             },
             "required": ["query"],
@@ -50,7 +50,7 @@ def travel_query(creds: dict[str, Any], args: dict[str, Any]) -> str:
     query = str(args.get("query") or "").strip()
     if not query:
         raise ValueError("query is required")
-    city = str(args.get("city") or "北京").strip() or "北京"
+    city = str(args.get("city") or "Beijing").strip() or "Beijing"
     headers = {
         # Official mttravel CLI sends the raw token (not Bearer).
         "Authorization": _api_key(creds),
@@ -61,7 +61,7 @@ def travel_query(creds: dict[str, Any], args: dict[str, Any]) -> str:
     with httpx.Client(timeout=120.0) as client:
         r = client.post(QUERY_URL, headers=headers, json=body)
         if r.status_code == 401:
-            raise ValueError("美团旅游 API Key 无效: 鉴权失败")
+            raise ValueError("API Key Meituan Travel tidak valid: autentikasi gagal")
         r.raise_for_status()
         payload = r.json()
     if not isinstance(payload, dict):
@@ -69,13 +69,13 @@ def travel_query(creds: dict[str, Any], args: dict[str, Any]) -> str:
     code = payload.get("code")
     msg = str(payload.get("msg") or "")
     data = payload.get("data")
-    auth_hints = ("鉴权失败", "无效的访问令牌", "unauthorized", "token无效", "访问令牌已过期")
+    auth_hints = ("autentikasi gagal", "token akses tidak valid", "unauthorized", "token tidak valid", "token akses kedaluwarsa")
     if code in (401, "401") or any(h in msg for h in auth_hints):
-        raise ValueError(f"美团旅游 API Key 无效: {msg or code}")
+        raise ValueError(f"API Key Meituan Travel tidak valid: {msg or code}")
     if isinstance(data, str) and any(h in data for h in auth_hints):
-        raise ValueError(f"美团旅游 API Key 无效: {data[:200]}")
+        raise ValueError(f"API Key Meituan Travel tidak valid: {data[:200]}")
     if code not in (0, "0", None):
-        raise ValueError(f"美团旅游接口错误 [{code}]: {msg or code}")
+        raise ValueError(f"Galat antarmuka Meituan Travel [{code}]: {msg or code}")
     if isinstance(data, str) and data.strip():
         return data
     return json.dumps(payload, ensure_ascii=False, indent=2)
@@ -89,10 +89,10 @@ def probe_credentials(creds: dict[str, Any]) -> None:
 def _api_key(creds: dict[str, Any]) -> str:
     api_key = str(creds.get("api_key") or creds.get("token") or "").strip()
     if not api_key:
-        raise ValueError("请填写美团旅游 API Key")
+        raise ValueError("Isi API Key Meituan Travel")
     if not _TOKEN_RE.match(api_key):
         raise ValueError(
-            "美团旅游 API Key 格式不正确，请打开 "
-            "https://developer.meituan.com/zh/v2/dev/token 复制完整 Token"
+            "Format API Key Meituan Travel salah, buka "
+            "https://developer.meituan.com/zh/v2/dev/token lalu salin Token lengkap"
         )
     return api_key

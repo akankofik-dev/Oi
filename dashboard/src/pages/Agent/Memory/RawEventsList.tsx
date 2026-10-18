@@ -50,13 +50,13 @@ interface Props {
 function eventTypeLabel(type: string, t: TFunction): string {
   switch (type) {
     case "user_message":
-      return t("memory.raw.typeUser", "用户消息");
+      return t("memory.raw.typeUser", "Pesan pengguna");
     case "assistant_message":
-      return t("memory.raw.typeAssistant", "AI 回复");
+      return t("memory.raw.typeAssistant", "Balasan AI");
     case "tool_call":
-      return t("memory.raw.typeToolCall", "工具调用");
+      return t("memory.raw.typeToolCall", "Pemanggilan tool");
     case "tool_result":
-      return t("memory.raw.typeToolResult", "工具结果");
+      return t("memory.raw.typeToolResult", "Hasil tool");
     default:
       return type;
   }
@@ -104,7 +104,7 @@ export default function RawEventsList({ agentId }: Props) {
   const toolbar = (
     <>
       <span style={{ color: "#595959" }}>
-        {t("memory.raw.typeFilter", "类型")}:
+        {t("memory.raw.typeFilter", "Jenis")}:
       </span>
       <Select
         style={{ width: 140 }}
@@ -121,7 +121,7 @@ export default function RawEventsList({ agentId }: Props) {
       <Input.Search
         allowClear
         style={{ width: 220 }}
-        placeholder={t("memory.raw.searchPlaceholder", "搜索素材内容")}
+        placeholder={t("memory.raw.searchPlaceholder", "Cari konten materi")}
         onSearch={(v) => {
           setQuery(v);
           setPage(1);
@@ -145,7 +145,7 @@ export default function RawEventsList({ agentId }: Props) {
       selected={selected}
       onItemClick={setSelected}
       onCloseDrawer={() => setSelected(null)}
-      drawerTitle={t("memory.raw.detailTitle", "素材详情")}
+      drawerTitle={t("memory.raw.detailTitle", "Detail materi")}
       drawerWidth={520}
       emptyContent={
         noFilterActive ? <MemoryPipelineEmpty agentId={agentId} /> : undefined
@@ -184,7 +184,7 @@ export default function RawEventsList({ agentId }: Props) {
           </Space>
 
           <Typography.Title level={5}>
-            {t("memory.raw.content", "内容")}
+            {t("memory.raw.content", "Konten")}
           </Typography.Title>
           <Typography.Paragraph style={{ whiteSpace: "pre-wrap" }}>
             {e.content}
@@ -194,7 +194,7 @@ export default function RawEventsList({ agentId }: Props) {
             type="secondary"
             style={{ fontSize: 12, marginTop: 16 }}
           >
-            {t("memory.raw.capturedAt", "捕获于")}{" "}
+            {t("memory.raw.capturedAt", "Diambil pada")}{" "}
             {formatServerIsoDateTime(e.timestamp, timeZone)}
           </Typography.Paragraph>
         </div>

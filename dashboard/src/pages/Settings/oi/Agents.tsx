@@ -320,7 +320,7 @@ export default function OiAgentsPage() {
   return (
     <PageShell
       title={t("pageShell.adminAgents.title")}
-      subtitle={t("pageShell.adminAgents.subtitle")}
+      subtitle={isMobile ? undefined : t("pageShell.adminAgents.subtitle")}
       actions={
         <Button icon={<RefreshCw size={14} />} onClick={() => void refresh()}>
           {t("common.refresh")}

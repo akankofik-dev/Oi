@@ -8,13 +8,12 @@ from typing import TYPE_CHECKING
 
 from oi.infra.db.pool import DatabasePool
 from oi.infra.db.repos._base import (
-    UNSET,
     DbRow,
     bool_int,
     insert_returning_id,
     map_rows,
     now_ts,
-    optional_updates,
+    partial_updates,
 )
 
 if TYPE_CHECKING:
@@ -107,17 +106,15 @@ class ProviderRepo:
         self,
         provider_id: int,
         *,
-        kind: str | None | object = UNSET,
-        base_url: str | None | object = UNSET,
-        api_key: str | None | object = UNSET,
-        extra_json: str | None | object = UNSET,
-        models_json: str | None | object = UNSET,
-        note: str | None | object = UNSET,
+        kind: str | None = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        extra_json: str | None = None,
+        models_json: str | None = None,
+        note: str | None = None,
         enabled: bool | None = None,
     ) -> None:
-        # ``None`` clears the column. Omitted args stay ``UNSET`` and are skipped,
-        # so a note-only patch cannot wipe a stored API key.
-        fields, params = optional_updates(
+        fields, params = partial_updates(
             [
                 ("kind", kind),
                 ("base_url", base_url),

@@ -30,7 +30,7 @@ export default function SidebarCollapsedIconNav({
             key={item.key}
             title={`${t(item.labelKey)}${
               showUpdateBadge
-                ? ` (${t("nav.newVersionBadge", "有新版本")})`
+                ? ` (${t("nav.newVersionBadge", "Versi baru")})`
                 : item.badge
                 ? ` (${item.badge})`
                 : ""
@@ -79,7 +79,7 @@ export default function SidebarCollapsedIconNav({
                 <span
                   className={`${styles.navUpdateBadge} ${styles.navUpdateBadgeCollapsed}`}
                 >
-                  {t("nav.newVersionBadgeShort", "新")}
+                  新
                 </span>
               ) : null}
               {item.badge && (
@@ -92,6 +92,8 @@ export default function SidebarCollapsedIconNav({
                     zIndex: 2,
                     fontSize: 7,
                     fontWeight: 700,
+                    color: "#fff",
+                    backgroundColor: "#ff4d4f",
                     width: 14,
                     height: 14,
                     display: "flex",

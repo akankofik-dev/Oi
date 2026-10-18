@@ -108,21 +108,20 @@ export function useSkillRecordingWorkflow({
         const previewText = previewLines.join("\n");
         const truncationNotice =
           data.skillContent.split("\n").length > 20
-            ? t("skillRecord.previewTruncation", {
-                lines: data.skillContent.split("\n").length,
-              })
+            ? `\n\n... (共 ${
+                data.skillContent.split("\n").length
+              } 行，完整内容将在确认后保存)`
             : "";
 
         chatStore.appendPushMessage(
-          t("skillRecord.previewMessage", {
-            steps: data.steps ?? 0,
-            preview: previewText,
-            truncation: truncationNotice,
-          }),
+          `✅ 录制完成！已生成 ${data.steps ?? 0} 个回放步骤。\n\n` +
+            `📝 **技能脚本预览：**\n\n${previewText}${truncationNotice}\n\n` +
+            `回复"确认"即可应用此技能，之后可以一键回放相同操作流程。`,
         );
       } else {
         chatStore.appendPushMessage(
-          t("skillRecord.previewNoScript", { steps: data.steps ?? 0 }),
+          `✅ 录制完成！已生成 ${data.steps ?? 0} 个回放步骤。\n\n` +
+            `⚠️ 技能脚本生成失败，请稍后重试或手动生成。`,
         );
       }
 
@@ -133,7 +132,7 @@ export function useSkillRecordingWorkflow({
       antMessage.error(
         err instanceof Error
           ? err.message
-          : t("skillRecord.stopFailed", "停止录制失败"),
+          : t("skillRecord.stopFailed", "Gagal menghentikan perekaman"),
       );
     } finally {
       workflowBusyRef.current = false;
@@ -179,9 +178,8 @@ export function useSkillRecordingWorkflow({
 
       // Push confirmation message to chat
       chatStore.appendPushMessage(
-        t("skillRecord.appliedMessage", {
-          name: result.name || pendingSkillName,
-        }),
+        `🎉 技能 **${result.name || pendingSkillName}** 已成功应用！\n\n` +
+          `之后可以通过聊天输入相关指令，一键回放相同的浏览器操作流程。`,
       );
 
       antMessage.success(
@@ -193,7 +191,7 @@ export function useSkillRecordingWorkflow({
       antMessage.error(
         err instanceof Error
           ? err.message
-          : t("skillRecord.applyFailed", "应用技能失败"),
+          : t("skillRecord.applyFailed", "Gagal menerapkan skill"),
       );
     } finally {
       workflowBusyRef.current = false;

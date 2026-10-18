@@ -7,8 +7,6 @@ file listing:
 
   GET    /api/agents/{aid}/skills                 → summaries
   GET    /api/agents/{aid}/skills/{name}          → full detail (frontmatter + body)
-  GET    /api/agents/{aid}/skills/{name}/export   → ZIP of one workspace skill
-  POST   /api/agents/{aid}/skills/export         → ZIP of selected workspace skills
   POST   /api/agents/{aid}/skills                 → body { name, content }
   DELETE /api/agents/{aid}/skills/{name}          → remove SKILL.md
   POST   /api/agents/{aid}/skills/{name}/enable
@@ -44,11 +42,9 @@ from typing import Any, cast
 
 import yaml
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from oi.api.common.agent import require_agent_owner_row, require_agent_row
-from oi.api.common.content_disposition import content_disposition
 from oi.api.deps import current_user, get_server, require_permission
 from oi.infra.agents.manager import (
     skill_package_ids_list,
@@ -58,7 +54,6 @@ from oi.infra.agents.manager import (
 )
 from oi.infra.errors import ErrorCode, OiError
 from oi.infra.skills.presentation import apply_skill_presentation
-from oi.infra.skills.skill_archive import build_skill_zip, build_skills_zip
 from oi.infra.skills.skill_package_store import SkillPackageStore, normalize_copy_policy
 from oi.infra.skills.skill_packages import (
     SkillPackageError,
@@ -73,15 +68,10 @@ from oi.infra.skills.skill_transfer import (
     copy_package_skills_to_workspace,
     copy_workspace_skill_to_package,
     copy_workspace_skill_to_workspace,
-    read_workspace_skill_files,
 )
 from oi.infra.utils.locale import Locale, resolve_request_locale
 
 logger = logging.getLogger(__name__)
-
-_SKILLHUB_INSTALL_URL = (
-    "https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/install.sh"
-)
 
 router = APIRouter()
 
@@ -294,66 +284,23 @@ async def _close_subprocess(proc: asyncio.subprocess.Process) -> None:
 
 
 async def _install_skillhub_cli() -> str:
-    """Download and run the official install script; return the binary path."""
+    """Auto-install skillhub CLI DINONAKTIFKAN demi keamanan.
+
+    Mengunduh lalu mengeksekusi script shell dari URL remote (dulu via
+    Tencent COS) adalah risiko supply-chain RCE dan tidak boleh dilakukan
+    otomatis oleh server. Install manual:
+
+        https://github.com/akankofik-dev/Oi#readme
+    """
     from fastapi import HTTPException  # noqa: PLC0415
 
-    logger.info("skillhub CLI not found, attempting auto-install...")
-    curl_proc: asyncio.subprocess.Process | None = None
-    bash_proc: asyncio.subprocess.Process | None = None
-    try:
-        curl_proc = await asyncio.create_subprocess_exec(
-            "curl",
-            "-fsSL",
-            _SKILLHUB_INSTALL_URL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        script_stdout, curl_stderr = await asyncio.wait_for(curl_proc.communicate(), timeout=30)
-        if curl_proc.returncode != 0:
-            raise RuntimeError(
-                curl_stderr.decode("utf-8", errors="replace").strip() or "curl failed"
-            )
-        bash_proc = await asyncio.create_subprocess_exec(
-            "bash",
-            "-s",
-            "--",
-            "--no-skills",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env={**os.environ, "HOME": os.path.expanduser("~")},
-        )
-        _, bash_stderr = await asyncio.wait_for(
-            bash_proc.communicate(input=script_stdout), timeout=60
-        )
-        if bash_proc.returncode != 0:
-            raise RuntimeError(
-                bash_stderr.decode("utf-8", errors="replace").strip() or "install script failed"
-            )
-    except TimeoutError:
-        raise HTTPException(status_code=504, detail="skillhub auto-install timed out") from None
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=502, detail=f"Failed to auto-install skillhub CLI: {exc}"
-        ) from exc
-    finally:
-        if curl_proc is not None:
-            await _close_subprocess(curl_proc)
-        if bash_proc is not None:
-            await _close_subprocess(bash_proc)
-
-    skillhub_bin = _resolve_skillhub_bin()
-    if not skillhub_bin:
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                "skillhub CLI not found after install. "
-                f"Install manually: curl -fsSL {_SKILLHUB_INSTALL_URL} | sh"
-            ),
-        )
-    return skillhub_bin
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            "skillhub CLI tidak ditemukan dan auto-install dinonaktifkan "
+            "demi keamanan. Install skillhub secara manual lalu ulangi."
+        ),
+    )
 
 
 async def _ensure_skillhub_cli() -> str:
@@ -733,83 +680,6 @@ async def get_skill(
         "body": body,
         "raw": manifest,
     }
-
-
-@router.get(
-    "/agents/{agent_id}/skills/{name}/export",
-    summary="Download a workspace skill as a ZIP",
-    description=(
-        "Pack one self-built workspace skill (SKILL.md and sibling files) into a ZIP "
-        "whose top-level folder is the skill slug. Built-in skills are not included. "
-        "The archive matches the dashboard ZIP importer, so it can be imported onto "
-        "another agent or into a skill package."
-    ),
-    response_class=Response,
-    responses={200: {"content": {"application/zip": {}}}},
-)
-async def export_skill_zip(
-    agent_id: str,
-    name: str,
-    request: Request,
-    as_user: int | None = None,
-    user: Any = Depends(current_user),
-    server: Any = Depends(get_server),
-) -> Response:
-    ctx = await _ctx(agent_id, user=user, as_user=as_user, server=server)
-    locale = resolve_request_locale(request)
-    try:
-        files = await read_workspace_skill_files(ctx.workspace, name)
-        safe_slug = validate_skill_slug(name)
-        payload = await asyncio.to_thread(build_skill_zip, safe_slug, files)
-    except SkillPackageError as exc:
-        raise _skill_transfer_error(exc, locale=locale) from exc
-    return Response(
-        content=payload,
-        media_type="application/zip",
-        headers={"Content-Disposition": content_disposition(f"{safe_slug}.zip")},
-    )
-
-
-class ExportSkillsBody(BaseModel):
-    slugs: list[str] = Field(min_length=1)
-
-
-@router.post(
-    "/agents/{agent_id}/skills/export",
-    summary="Download workspace skills as one ZIP",
-    description=(
-        "Pack the selected workspace skills into one ZIP. Each skill is a top-level "
-        "folder containing SKILL.md, which is the layout the dashboard ZIP importer "
-        "already accepts."
-    ),
-    response_class=Response,
-    responses={200: {"content": {"application/zip": {}}}},
-)
-async def export_skills_zip(
-    agent_id: str,
-    body: ExportSkillsBody,
-    request: Request,
-    as_user: int | None = None,
-    user: Any = Depends(current_user),
-    server: Any = Depends(get_server),
-) -> Response:
-    ctx = await _ctx(agent_id, user=user, as_user=as_user, server=server)
-    locale = resolve_request_locale(request)
-    slugs = list(dict.fromkeys(body.slugs))
-    try:
-        packed: list[tuple[str, list[tuple[str, bytes]]]] = []
-        for slug in slugs:
-            files = await read_workspace_skill_files(ctx.workspace, slug)
-            packed.append((validate_skill_slug(slug), files))
-        payload = await asyncio.to_thread(build_skills_zip, packed)
-    except SkillPackageError as exc:
-        raise _skill_transfer_error(exc, locale=locale) from exc
-    filename = f"{packed[0][0]}.zip" if len(packed) == 1 else "skills.zip"
-    return Response(
-        content=payload,
-        media_type="application/zip",
-        headers={"Content-Disposition": content_disposition(filename)},
-    )
 
 
 # --- write endpoints --------------------------------------------------------

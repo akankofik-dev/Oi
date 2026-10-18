@@ -159,6 +159,21 @@ class WebSocketHub:
         if isinstance(frame, dict):
             await self.push(connection_id, frame)
 
+    async def broadcast(self, frame: dict[str, Any]) -> None:
+        """Push *frame* to ALL connected dashboard clients.
+
+        Used for global events like model/provider changes that every
+        client should know about (dashboard live-refresh).
+        """
+        targets = list(self._connections.keys())
+        if not targets:
+            logger.debug("ws hub: broadcast with no connections")
+            return
+        if len(targets) == 1:
+            await self.push(targets[0], frame)
+            return
+        await asyncio.gather(*(self.push(conn_id, frame) for conn_id in targets))
+
     @property
     def connection_count(self) -> int:
         return len(self._connections)

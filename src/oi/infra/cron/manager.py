@@ -308,7 +308,9 @@ class CronManager:
         ):
             raise OiError(ErrorCode.CRON_TRIGGER_INVALID, "Agent Mail source is unavailable")
         if source.user_id != user_id and not source.shared:
-            raise OiError(ErrorCode.FORBIDDEN, "Agent Mail source is not visible to the job owner")
+            raise OiError(
+                ErrorCode.FORBIDDEN, "Agent Mail source is not visible to the job owner"
+            )
         if not self._mailbox_authorized(source):
             raise OiError(ErrorCode.CRON_TRIGGER_INVALID, "Agent Mail mailbox is not authorized")
         return source

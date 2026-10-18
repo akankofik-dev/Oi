@@ -198,7 +198,9 @@ def _max_upload_bytes(server: OiServer) -> int:
     return MAX_DOCUMENT_BYTES
 
 
-def _map_knowledge_error(exc: Exception, *, locale: str, server: OiServer | None = None) -> OiError:
+def _map_knowledge_error(
+    exc: Exception, *, locale: str, server: OiServer | None = None
+) -> OiError:
     if isinstance(exc, OiError):
         return exc
     if isinstance(exc, (LookupError, FileNotFoundError)):
@@ -209,12 +211,6 @@ def _map_knowledge_error(exc: Exception, *, locale: str, server: OiServer | None
     if isinstance(exc, RuntimeError):
         if "disabled" in text:
             return OiError.localized(ErrorCode.KNOWLEDGE_FEATURE_DISABLED, locale)
-        # Packages installed into a directory the running interpreter did not have on
-        # sys.path at startup (pip's user site) are importable only after a restart.
-        # Report that instead of the generic prerequisite error, which told the user
-        # nothing they could act on and sent them into a retry loop.
-        if "restart the server" in text:
-            return OiError.localized(ErrorCode.KNOWLEDGE_PREREQUISITES_RESTART_REQUIRED, locale)
         if any(
             kw in text
             for kw in (
@@ -725,10 +721,7 @@ async def create_text_document(
 async def upload_document(
     kb_id: str,
     request: Request,
-    upload: UploadFile = File(
-        ...,
-        description="A supported text, PDF, DOC/WPS, DOCX, or PPTX document.",
-    ),
+    upload: UploadFile = File(..., description="A supported text, PDF, DOCX, or PPTX document."),
     path: str | None = Form(
         default=None,
         description="Optional relative path including filename (for nested folders).",

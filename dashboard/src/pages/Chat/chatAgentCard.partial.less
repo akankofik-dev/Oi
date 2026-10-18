@@ -49,15 +49,7 @@
   min-width: 0;
 }
 
-.expertNavActions {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 1px;
-}
-
-.agentNewChatBtn,
-.agentPinBtn {
+.agentNewChatBtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -87,19 +79,14 @@
 .agentCardProfile:hover .agentNewChatBtn,
 .agentCardProfile:focus-within .agentNewChatBtn,
 .agentRow:hover .agentNewChatBtn,
-.agentRow:focus-within .agentNewChatBtn,
-.agentCardProfile:hover .agentPinBtn,
-.agentCardProfile:focus-within .agentPinBtn,
-.agentRow:hover .agentPinBtn,
-.agentRow:focus-within .agentPinBtn {
+.agentRow:focus-within .agentNewChatBtn {
   opacity: 1;
   pointer-events: auto;
 }
 
 /* Touch devices never hover — keep the control reachable. */
 @media (hover: none) {
-  .agentNewChatBtn,
-  .agentPinBtn {
+  .agentNewChatBtn {
     opacity: 1;
     pointer-events: auto;
   }
@@ -289,15 +276,6 @@
 
 .agentUnreadBadge {
   margin-left: auto;
-}
-
-.sessionRowLead {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 12px;
-  height: 12px;
 }
 
 .sessionRowIcon {

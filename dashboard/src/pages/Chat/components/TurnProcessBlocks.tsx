@@ -25,11 +25,7 @@ interface TurnProcessBlocksProps {
 
 function hasFoldContent(split: AssistantTurnSplit): boolean {
   const { toolCount, thinkingCount } = countProcessStats(split);
-  return (
-    toolCount > 0 ||
-    thinkingCount > 0 ||
-    split.processSteps.some((step) => step.kind === "decision")
-  );
+  return toolCount > 0 || thinkingCount > 0;
 }
 
 /** Process summary (fold) and rich tool UIs as **sibling** blocks — not nested. */

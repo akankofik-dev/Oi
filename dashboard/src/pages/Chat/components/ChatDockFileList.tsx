@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import { message } from "@/utils/antdMessage";
 import { requestBlob } from "../../../api/request";
 import { isNotFoundApiError } from "../../../utils/apiError";
-import { saveBlobAsFile } from "../../../utils/saveBlobAsFile";
 import { fileTreeIcon } from "../../../utils/fileTreeIcon";
 import {
   buildDockPathTree,
@@ -258,7 +257,11 @@ export default function ChatDockFileList({
             toDockWorkspaceApiPath(path, owner),
           )}`,
         );
-        await saveBlobAsFile(blob, dockFileBasename(path) || "download");
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = dockFileBasename(path) || "download";
+        a.click();
+        URL.revokeObjectURL(a.href);
       } catch (err: unknown) {
         if (isNotFoundApiError(err)) {
           message.warning(
@@ -271,7 +274,7 @@ export default function ChatDockFileList({
         }
         message.error(
           (err instanceof Error ? err.message : String(err)) ||
-            t("workspace.downloadFailed", "下载失败"),
+            t("workspace.downloadFailed", "Unduhan gagal"),
         );
       } finally {
         setDownloading(null);
@@ -314,7 +317,7 @@ export default function ChatDockFileList({
     );
   }
 
-  const downloadLabel = t("common.download", "下载");
+  const downloadLabel = t("common.download", "Unduh");
 
   return (
     <div className={styles.dockFileList}>

@@ -84,20 +84,20 @@ export function AgentlyAuth({
   };
 
   const statusLabels = {
-    idle: t("connectors.agentlyIdle", "尚未授权此邮箱实例"),
+    idle: t("connectors.agentlyIdle", "Instance mailbox ini tidak terotorisasi"),
     pending: t(
       "connectors.agentlyPending",
       "请打开授权页完成登录，授权结果会自动更新。",
     ),
-    authorized: t("connectors.agentlyAuthorized", "邮箱已授权"),
-    expired: t("connectors.agentlyExpired", "授权已过期，请重新登录授权"),
-    error: t("connectors.agentlyAuthFailed", "邮箱授权失败，请重试"),
+    authorized: t("connectors.agentlyAuthorized", "Mailbox terotorisasi"),
+    expired: t("connectors.agentlyExpired", "Otorisasi kedaluwarsa. Silakan masuk lagi"),
+    error: t("connectors.agentlyAuthFailed", "Otorisasi mailbox gagal. Silakan coba lagi"),
   };
 
   return (
     <div className={`${styles.feishuUserAuthBox} ${styles.agentlyAuthBox}`}>
       <div className={styles.feishuUserAuthTitle}>
-        {t("connectors.agentlyAuthTitle", "Agent Mail 邮箱授权")}
+        {t("connectors.agentlyAuthTitle", "Otorisasi Agent Mail")}
       </div>
       <div
         className={
@@ -118,7 +118,7 @@ export function AgentlyAuth({
             error
               ? apiErrorMessage(
                   error,
-                  t("connectors.agentlyAuthFailed", "邮箱授权失败，请重试"),
+                  t("connectors.agentlyAuthFailed", "Otorisasi mailbox gagal. Silakan coba lagi"),
                   t,
                 )
               : auth?.error
@@ -127,7 +127,7 @@ export function AgentlyAuth({
       )}
       {auth?.status === "pending" && auth.user_code && (
         <p>
-          {t("connectors.agentlyUserCode", "授权码")}:{" "}
+          {t("connectors.agentlyUserCode", "Kode otorisasi")}:{" "}
           <code>{auth.user_code}</code>
         </p>
       )}
@@ -138,11 +138,11 @@ export function AgentlyAuth({
           loading={busy}
           onClick={() => void run("start")}
         >
-          {t("connectors.agentlyStart", "登录授权")}
+          {t("connectors.agentlyStart", "Masuk untuk mengotorisasi")}
         </Button>
         {auth?.status === "pending" && auth.verification_url && (
           <Button href={auth.verification_url} target="_blank" rel="noreferrer">
-            {t("connectors.openAuthorizePage", "打开授权页")}
+            {t("connectors.openAuthorizePage", "Buka halaman otorisasi")}
           </Button>
         )}
         <Button
@@ -153,18 +153,18 @@ export function AgentlyAuth({
             setRevision((v) => v + 1);
           }}
         >
-          {t("connectors.agentlyCheckStatus", "检查状态")}
+          {t("connectors.agentlyCheckStatus", "Periksa status")}
         </Button>
         {(auth?.status === "authorized" || auth?.status === "expired") && (
           <Button disabled={busy} onClick={() => void run("refresh")}>
-            {t("connectors.agentlyRefresh", "刷新授权")}
+            {t("connectors.agentlyRefresh", "Refresh otorisasi")}
           </Button>
         )}
         {auth && auth.status !== "idle" && (
           <Button danger disabled={busy} onClick={() => void run("logout")}>
             {auth.status === "pending"
-              ? t("connectors.agentlyCancel", "取消授权")
-              : t("connectors.agentlyLogout", "注销授权")}
+              ? t("connectors.agentlyCancel", "Batalkan otorisasi")
+              : t("connectors.agentlyLogout", "Keluar")}
           </Button>
         )}
       </div>

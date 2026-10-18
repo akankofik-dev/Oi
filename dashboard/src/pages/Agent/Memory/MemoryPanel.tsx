@@ -13,7 +13,6 @@ import {
   LayoutDashboard,
   MessageSquare,
   Network,
-  Pin,
   ScrollText,
   Settings,
   User,
@@ -32,15 +31,12 @@ import CandidatesReview from "./CandidatesReview";
 import MemoryTree from "./MemoryTree";
 import ProactiveConfig from "./ProactiveConfig";
 import MemorySettings from "./MemorySettings";
-import StrongMemory from "./StrongMemory";
 
 import memoryDashboardApi from "../../../api/modules/memoryDashboard";
 import styles from "./index.module.less";
 
 type MemoryTab =
   | "overview"
-  | "strong"
-  | "userFile"
   | "profile"
   | "library"
   | "episodes"
@@ -78,18 +74,6 @@ const TABS: TabDef[] = [
     labelKey: "memory.tabs.library",
     fallback: "记忆树",
     icon: Network,
-  },
-  {
-    key: "strong",
-    labelKey: "memory.tabs.strong",
-    fallback: "强记忆",
-    icon: Pin,
-  },
-  {
-    key: "userFile",
-    labelKey: "memory.tabs.userFile",
-    fallback: "用户档案",
-    icon: User,
   },
   {
     key: "episodes",
@@ -180,15 +164,15 @@ export default function MemoryPanel({
             onChange={(v) => setLibraryView(v as LibraryView)}
             options={[
               {
-                label: t("memory.library.viewTree", "主题视图"),
+                label: t("memory.library.viewTree", "Tampilan topik"),
                 value: "tree",
               },
               {
-                label: t("memory.library.viewAtoms", "列表视图"),
+                label: t("memory.library.viewAtoms", "Tampilan daftar"),
                 value: "atoms",
               },
               {
-                label: t("memory.library.viewRaw", "原始素材"),
+                label: t("memory.library.viewRaw", "Materi mentah"),
                 value: "raw",
               },
             ]}
@@ -244,25 +228,6 @@ export default function MemoryPanel({
               onViewConversations={() => setActiveTab("conversations")}
               onReviewCandidates={() => setActiveTab("candidates")}
               onOpenSettings={() => setActiveTab("settings")}
-            />
-          );
-          break;
-        case "strong":
-          children = (
-            <StrongMemory
-              key={agentId}
-              agentId={agentId}
-              onReviewCandidates={() => setActiveTab("candidates")}
-            />
-          );
-          break;
-        case "userFile":
-          children = (
-            <StrongMemory
-              key={`${agentId}:user`}
-              agentId={agentId}
-              document="user"
-              onReviewCandidates={() => setActiveTab("candidates")}
             />
           );
           break;

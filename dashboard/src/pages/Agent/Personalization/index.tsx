@@ -114,7 +114,7 @@ export default function PersonalizationPage() {
   return (
     <PageShell
       title={pageTitle}
-      subtitle={t("personalization.description")}
+      subtitle={isMobile ? undefined : t("personalization.description")}
       agentScoped
       showTeams={showTeams}
       fill={!isMobile}

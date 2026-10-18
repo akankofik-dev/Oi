@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 
@@ -14,31 +13,6 @@ from oi_gateway.models import (
     MessageEventType,
     TextContent,
 )
-try:
-    from oi_gateway.utils import close_event_stream
-except ImportError:  # oi-gateway tanpa close_event_stream (mis. v1.0.0)
-    async def close_event_stream(stream: Any) -> None:
-        """Tutup stream event secara graceful (fallback lokal).
-
-        Dipakai saat oi_gateway yang terinstal belum menyediakan
-        ``close_event_stream``: tutup async generator via ``aclose()``,
-        lalu ``close()`` (sync/async), lalu ``cancel()`` untuk task.
-        """
-        if stream is None:
-            return
-        aclose = getattr(stream, "aclose", None)
-        if callable(aclose):
-            await aclose()
-            return
-        close = getattr(stream, "close", None)
-        if callable(close):
-            result = close()
-            if inspect.isawaitable(result):
-                await result
-            return
-        cancel = getattr(stream, "cancel", None)
-        if callable(cancel):
-            cancel()
 
 from oi.infra.utils.llm_text import strip_thinking
 
@@ -82,123 +56,63 @@ async def collapse_to_invoke_response(
     text_buffer = ""
     media_buffer: list[ContentPart] = []
 
-    try:
-        async for event in events:
-            if event.type == MessageEventType.DELTA:
-                for part in event.content:
-                    if isinstance(part, TextContent) and part.text:
-                        text_buffer += part.text
-                continue
+    async for event in events:
+        if event.type == MessageEventType.DELTA:
+            for part in event.content:
+                if isinstance(part, TextContent) and part.text:
+                    text_buffer += part.text
+            continue
 
-            if event.type == MessageEventType.MESSAGE:
-                for part in event.content:
-                    if isinstance(part, TextContent):
-                        text = part.text.strip()
-                        if text:
-                            if text_buffer and not text_buffer.endswith("\n"):
-                                text_buffer += "\n"
-                            text_buffer += text
-                    else:
-                        media_buffer.append(part)
-                continue
+        if event.type == MessageEventType.MESSAGE:
+            for part in event.content:
+                if isinstance(part, TextContent):
+                    text = part.text.strip()
+                    if text:
+                        if text_buffer and not text_buffer.endswith("\n"):
+                            text_buffer += "\n"
+                        text_buffer += text
+                else:
+                    media_buffer.append(part)
+            continue
 
-            if event.type == MessageEventType.TOOL_START:
-                # Assistant text immediately followed by a tool call is usually
-                # progress narration. Keep it for ``ask_agent`` so team hosts still
-                # show their dispatch line on invoke-mode channels.
-                meta = event.metadata if isinstance(event.metadata, dict) else {}
-                tool_key = str(meta.get("tool_key") or meta.get("tool_name") or "")
-                if tool_key != "ask_agent":
-                    text_buffer = ""
-                continue
-
-            if event.type in (
-                MessageEventType.TYPING,
-                MessageEventType.THINKING,
-                MessageEventType.THINKING_DELTA,
-                MessageEventType.FLUSH,
-                MessageEventType.TOOL_END,
-            ):
-                continue
-
-            if event.type == MessageEventType.ERROR:
+        if event.type == MessageEventType.TOOL_START:
+            # Assistant text immediately followed by a tool call is usually
+            # progress narration. Keep it for ``ask_agent`` so team hosts still
+            # show their dispatch line on invoke-mode channels.
+            meta = event.metadata if isinstance(event.metadata, dict) else {}
+            tool_key = str(meta.get("tool_key") or meta.get("tool_name") or "")
+            if tool_key != "ask_agent":
                 text_buffer = ""
-                media_buffer.clear()
-                yield event
-                return
+            continue
 
-            if event.type == MessageEventType.COMPLETED:
-                content: list[ContentPart] = []
-                final_text = strip_thinking(text_buffer)
-                if final_text:
-                    content.append(TextContent(text=final_text))
-                content.extend(media_buffer)
-                if content:
-                    yield MessageEvent(type=MessageEventType.MESSAGE, content=content)
-                yield event
-                return
+        if event.type in (
+            MessageEventType.TYPING,
+            MessageEventType.THINKING,
+            MessageEventType.THINKING_DELTA,
+            MessageEventType.FLUSH,
+            MessageEventType.TOOL_END,
+        ):
+            continue
 
-            # Preserve future terminal/control events instead of silently losing them.
+        if event.type == MessageEventType.ERROR:
+            text_buffer = ""
+            media_buffer.clear()
             yield event
-    finally:
-        await close_event_stream(events)
+            continue
 
-
-_WEIXIN_PREAMBLE_TYPES = frozenset(
-    {
-        MessageEventType.DELTA,
-        MessageEventType.FLUSH,
-        MessageEventType.THINKING,
-        MessageEventType.THINKING_DELTA,
-    }
-)
-
-
-def _weixin_tool_key(event: MessageEvent) -> str:
-    meta = event.metadata if isinstance(event.metadata, dict) else {}
-    return str(meta.get("tool_key") or meta.get("tool_name") or "")
-
-
-def _drops_weixin_preamble(event: MessageEvent) -> bool:
-    """Tool calls other than ``ask_agent`` discard the text that led into them."""
-    return event.type == MessageEventType.TOOL_START and _weixin_tool_key(event) != "ask_agent"
-
-
-async def withhold_weixin_stream_preamble(
-    events: AsyncIterator[MessageEvent],
-) -> AsyncIterator[MessageEvent]:
-    """Drop text that is only the lead-in to a tool call.
-
-    Used for WeChat team hosts, which stay on stream mode. Other channels are
-    unchanged. ``ask_agent`` narration is kept so a team host can still say who
-    it is calling. Media and the final answer pass through in their own order.
-    """
-    held: list[MessageEvent] = []
-    try:
-        async for event in events:
-            if event.type in _WEIXIN_PREAMBLE_TYPES:
-                held.append(event)
-                continue
-            if not _drops_weixin_preamble(event):
-                for item in held:
-                    yield item
-            held.clear()
+        if event.type == MessageEventType.COMPLETED:
+            content: list[ContentPart] = []
+            final_text = strip_thinking(text_buffer)
+            if final_text:
+                content.append(TextContent(text=final_text))
+            content.extend(media_buffer)
+            if content:
+                yield MessageEvent(type=MessageEventType.MESSAGE, content=content)
             yield event
-            if event.type == MessageEventType.ERROR:
-                return
-        for item in held:
-            yield item
-    finally:
-        await close_event_stream(events)
+            return
 
-
-def wrap_weixin_stream_processor(processor: MessageProcessor) -> MessageProcessor:
-    """Hide tool lead-in text before a WeChat stream processor emits it."""
-
-    def _wrapped(message: InboundMessage) -> AsyncIterator[MessageEvent]:
-        return withhold_weixin_stream_preamble(processor(message))
-
-    return _wrapped
+        # Preserve future terminal/control events instead of silently losing them.
+        yield event
 
 
 def processor_for_response_mode(
@@ -209,8 +123,9 @@ def processor_for_response_mode(
     if mode == "stream":
         return processor
 
-    def _invoke_processor(message: InboundMessage) -> AsyncIterator[MessageEvent]:
-        return collapse_to_invoke_response(processor(message))
+    async def _invoke_processor(message: InboundMessage) -> AsyncIterator[MessageEvent]:
+        async for event in collapse_to_invoke_response(processor(message)):
+            yield event
 
     return _invoke_processor
 
@@ -222,6 +137,4 @@ __all__ = [
     "normalize_channel_response_mode",
     "processor_for_response_mode",
     "qq_channel_response_mode",
-    "withhold_weixin_stream_preamble",
-    "wrap_weixin_stream_processor",
 ]

@@ -66,21 +66,12 @@ class MemorySlimControl:
                 writer.write((json.dumps(response, ensure_ascii=False) + "\n").encode())
                 await writer.drain()
                 return
-            if operation == "orphan-dirs":
-                response = {
-                    "phase": "directories",
-                    "directories": coordinator.orphan_directories(),
-                }
-                writer.write((json.dumps(response, ensure_ascii=False) + "\n").encode())
-                await writer.drain()
-                return
             if operation != "slim":
                 raise ValueError("Unknown memory control operation")
             agent_id = request.get("agent_id")
             if not isinstance(agent_id, str) or not agent_id or len(agent_id) > 256:
                 raise ValueError("agent_id is required")
-            remove_directories = request.get("remove_directories") is True
-            coordinator.start(agent_id, locale=locale, remove_directories=remove_directories)
+            coordinator.start(agent_id, locale=locale)
             started = time.monotonic()
             state = coordinator.state
             previous = ""
@@ -125,31 +116,10 @@ class MemorySlimControl:
 
 
 def request_memory_slim(
-    root: Path,
-    agent_id: str,
-    *,
-    locale: str = "en",
-    remove_directories: bool = False,
+    root: Path, agent_id: str, *, locale: str = "en"
 ) -> Iterator[dict[str, Any]]:
     """Stream progress from an already running host; never starts another Oi."""
-    yield from _request_control(
-        root,
-        {
-            "agent_id": agent_id,
-            "locale": locale,
-            "remove_directories": remove_directories,
-        },
-    )
-
-
-def list_orphan_agent_dirs(root: Path) -> list[str]:
-    """Read-only list of agent directories whose names match no current agent."""
-    for status in _request_control(root, {"operation": "orphan-dirs"}):
-        if status["phase"] == "failed":
-            raise RuntimeError(status["error"])
-        directories: list[str] = status["directories"]
-        return directories
-    raise RuntimeError("Oi returned no directory list")
+    yield from _request_control(root, {"agent_id": agent_id, "locale": locale})
 
 
 def list_memory_slim_agents(root: Path, *, locale: str = "en") -> list[dict[str, str]]:
@@ -162,7 +132,7 @@ def list_memory_slim_agents(root: Path, *, locale: str = "en") -> list[dict[str,
     raise RuntimeError("Oi returned no agent list")
 
 
-def _request_control(root: Path, request: dict[str, Any]) -> Iterator[dict[str, Any]]:
+def _request_control(root: Path, request: dict[str, str]) -> Iterator[dict[str, Any]]:
     endpoint = json.loads((root / ENDPOINT).read_text())
     with socket.create_connection(("127.0.0.1", int(endpoint["port"])), timeout=5) as sock:
         sock.sendall((json.dumps({"token": endpoint["token"], **request}) + "\n").encode())
@@ -171,6 +141,6 @@ def _request_control(root: Path, request: dict[str, Any]) -> Iterator[dict[str, 
             for line in stream:
                 status = json.loads(line)
                 yield status
-                if status.get("phase") in {"done", "failed", "agents", "directories"}:
+                if status.get("phase") in {"done", "failed", "agents"}:
                     return
     raise RuntimeError("Oi disconnected; check the dashboard before retrying maintenance")

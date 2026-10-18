@@ -20,20 +20,20 @@ _KIND = "wecom-cli"
 _CATEGORIES = ("doc", "schedule", "msg")
 
 _MISSING_CLI_MSG = (
-    "企业微信 CLI 未安装或不在 PATH。"
-    "请打开「连接器 → 企业微信 CLI」，由管理员安装 CLI。"
-    "禁止建议或执行任何终端命令。"
+    "WeCom CLI belum terpasang atau tidak ada di PATH."
+    "Buka 'Konektor → WeCom CLI', minta admin memasang CLI."
+    "Dilarang menyarankan atau menjalankan perintah terminal apa pun."
 )
 _BAD_CREDS_MSG = (
-    "企业微信 Bot 凭证无效或 MCP 配置未就绪。"
-    "请核对 Bot ID / Secret，并确认机器人已开通 CLI 能力。"
-    "禁止建议或执行任何终端命令。"
+    "Kredensial Bot WeCom tidak valid atau konfigurasi MCP belum siap."
+    "Periksa Bot ID / Secret, dan pastikan bot sudah mengaktifkan kemampuan CLI."
+    "Dilarang menyarankan atau menjalankan perintah terminal apa pun."
 )
 
 _DOC_METHODS_HINT = (
-    "常用 method：create_doc、get_doc_content、edit_doc_content、"
+    "Method umum: create_doc, get_doc_content, edit_doc_content,"
     "smartsheet_get_sheet、smartsheet_get_records；"
-    "没有 list。不确定时先调 help(category=doc)。"
+    "Tidak ada list. Jika ragu, panggil help(category=doc) dulu."
 )
 
 TOOLS: list[dict[str, Any]] = [
@@ -143,9 +143,9 @@ def probe_credentials(creds: dict[str, Any]) -> None:
         if not (config_dir / "mcp_config.enc").is_file():
             raise ValueError(_BAD_CREDS_MSG)
         if read_mcp_items_count(config_dir) <= 0:
-            raise ValueError("企业微信 MCP 配置为空，请确认机器人已开通 CLI 能力并核对 Bot 凭证。")
+            raise ValueError("Konfigurasi MCP WeCom kosong, pastikan bot sudah mengaktifkan kemampuan CLI dan periksa kredensial Bot.")
         out = run_cli([binary, "doc", "--help"], env=env, timeout_s=60.0)
-        if "未找到 MCP" in out or "请先运行" in out:
+        if "MCP tidak ditemukan" in out or "Jalankan dulu" in out:
             raise ValueError(_BAD_CREDS_MSG)
     except ValueError as exc:
         raise ValueError(_humanize_cli_error(str(exc))) from exc
@@ -169,7 +169,7 @@ def _humanize_cli_error(message: str) -> str:
     if text in {_MISSING_CLI_MSG, _BAD_CREDS_MSG}:
         return text
     lower = text.lower()
-    if "未找到命令" in text or "command not found" in lower or "不在 path" in lower:
+    if "Perintah tidak ditemukan" in text or "command not found" in lower or "tidak ada di path" in lower:
         return _MISSING_CLI_MSG
 
     # Unknown method / clap usage — not a credential problem.
@@ -177,20 +177,20 @@ def _humanize_cli_error(message: str) -> str:
         return _sanitize_unknown_method_error(text)
 
     authish = (
-        "请先运行" in text
-        or "未找到 mcp" in lower
+        "Jalankan dulu" in text
+        or "mcp tidak ditemukan" in lower
         or "get_mcp_config" in lower
-        or "凭证校验失败" in text
-        or ("bot_id" in lower and ("invalid" in lower or "required" in lower or "失败" in text))
-        or ("bot_secret" in lower and ("invalid" in lower or "required" in lower or "失败" in text))
+        or "Verifikasi kredensial gagal" in text
+        or ("bot_id" in lower and ("invalid" in lower or "required" in lower or "gagal" in text))
+        or ("bot_secret" in lower and ("invalid" in lower or "required" in lower or "gagal" in text))
     )
     if authish:
         return _BAD_CREDS_MSG
 
     # Strip CLI binary names so agents don't try shell installs; keep business text.
     cleaned = _strip_cli_binary_mentions(text)
-    if "mcp" in cleaned.lower() and ("空" in cleaned or "未" in cleaned) and "禁止" not in cleaned:
-        return f"{cleaned} 禁止建议或执行任何终端命令。"
+    if "mcp" in cleaned.lower() and ("kosong" in cleaned or "belum" in cleaned) and "Dilarang" not in cleaned:
+        return f"{cleaned} Dilarang menyarankan atau menjalankan perintah terminal apa pun."
     return cleaned
 
 
@@ -199,14 +199,14 @@ def _sanitize_unknown_method_error(text: str) -> str:
     method = m.group(1) if m else ""
     if method:
         return (
-            f"未知方法 {method!r}。"
-            "请先调用 help 查看可用 method；勿猜测 list 等不存在的命令。"
-            "禁止建议或执行任何终端命令。"
+            f"Method tidak dikenal {method!r}。"
+            "Panggil help dulu untuk melihat method yang tersedia; jangan menebak perintah yang tidak ada seperti list."
+            "Dilarang menyarankan atau menjalankan perintah terminal apa pun."
         )
-    return "未知方法。请先调用 help 查看可用 method。禁止建议或执行任何终端命令。"
+    return "Method tidak dikenal. Panggil help dulu untuk melihat method yang tersedia.Dilarang menyarankan atau menjalankan perintah terminal apa pun."
 
 
 def _strip_cli_binary_mentions(text: str) -> str:
-    cleaned = re.sub(r"`?wecom-cli`?", "企业微信 CLI", text, flags=re.I)
+    cleaned = re.sub(r"`?wecom-cli`?", "WeCom CLI", text, flags=re.I)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned

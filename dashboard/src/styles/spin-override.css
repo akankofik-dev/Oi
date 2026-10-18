@@ -1,5 +1,5 @@
 /**
- * Layout contract for the global antd Spin indicator (OiSpinner).
+ * Layout contract for the global antd Spin indicator (OctopSpinner).
  * antd sizes and positions its default dot from the `dotSize` token, so every
  * geometry rule it derives (box, nested-pattern centering, tip gap) has to be
  * restated from the size variable.

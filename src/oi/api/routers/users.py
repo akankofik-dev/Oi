@@ -352,8 +352,7 @@ async def _batch_apply_one(
         elif action == "disable":
             await server.user_manager.disable(row.username)
         elif action == "delete":
-            registry = getattr(getattr(server, "app_runtime", None), "agent_registry", None)
-            await server.user_manager.remove(row.username, agent_manager=registry)
+            await server.user_manager.remove(row.username)
         elif action == "set_token_quota":
             await server.user_manager.set_resource_policy(
                 row.username,
@@ -550,8 +549,10 @@ async def delete_user(
     row = server.user_manager.get_row(user_id)
     if row is None:
         raise OiError(ErrorCode.NOT_FOUND, "user not found")
-    registry = getattr(getattr(server, "app_runtime", None), "agent_registry", None)
-    await server.user_manager.remove(row.username, agent_manager=registry)
+    await server.user_manager.remove(row.username)
+    from oi.infra.users.profile_avatar import delete_profile_avatar
+
+    delete_profile_avatar(server.services.paths.user_avatars_dir, str(user_id))
 
 
 @router.post("/{user_id}/avatar", status_code=201)

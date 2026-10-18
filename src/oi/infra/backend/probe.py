@@ -135,7 +135,9 @@ def _probe_docker(row: BackendRow) -> dict[str, Any]:
     except ImportError:
         return {
             "ok": False,
-            "message": ("docker Python package not installed (pip install 'oi-harness[docker]')"),
+            "message": (
+                "docker Python package not installed (pip install 'oi-harness[docker]')"
+            ),
         }
 
     try:

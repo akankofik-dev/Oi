@@ -2,37 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
-import json
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    File,
-    Form,
-    Query,
-    Request,
-    UploadFile,
-    WebSocket,
-    WebSocketDisconnect,
-)
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from starlette.websockets import WebSocketState
 
-from oi.api.deps import (
-    current_user,
-    get_server,
-    require_permission,
-    resolve_user_from_token,
-)
-from oi.i18n.domains.voice import realtime_error_message
+from oi.api.deps import current_user, get_server, require_permission
 from oi.infra.errors import ErrorCode, OiError
-from oi.infra.utils.locale import Locale, normalize_locale, resolve_request_locale
-from oi.infra.voice import realtime
+from oi.infra.utils.locale import resolve_request_locale
 from oi.infra.voice.manager import VoiceManager
 from oi.infra.voice.presets import load_voice_presets
 
@@ -45,17 +24,6 @@ def _voice_manager(server: Any) -> VoiceManager:
         settings_repo=server.services.settings_repo,
         voice_provider_repo=server.services.voice_provider_repo,
     )
-
-
-def _active_payload(mgr: VoiceManager) -> dict[str, Any]:
-    """Active provider names plus whether STT can stream.
-
-    The dashboard needs ``stt_realtime`` synchronously inside a user gesture to
-    decide between streaming and the one-shot upload path.
-    """
-    active: dict[str, Any] = dict(mgr.get_active())
-    active["stt_realtime"] = mgr.realtime_stt_config() is not None
-    return active
 
 
 def _row_to_dict(r: Any) -> dict[str, Any]:
@@ -129,8 +97,8 @@ async def list_voice_providers(
 async def get_active_voice(
     _: Any = Depends(current_user),
     server: Any = Depends(get_server),
-) -> dict[str, Any]:
-    return _active_payload(_voice_manager(server))
+) -> dict[str, str]:
+    return _voice_manager(server).get_active()
 
 
 @router.put("/active")
@@ -138,10 +106,8 @@ async def set_active_voice(
     body: ActiveVoiceBody,
     _: Any = Depends(require_permission("voice")),
     server: Any = Depends(get_server),
-) -> dict[str, Any]:
-    mgr = _voice_manager(server)
-    mgr.set_active(stt=body.stt, tts=body.tts)
-    return _active_payload(mgr)
+) -> dict[str, str]:
+    return _voice_manager(server).set_active(stt=body.stt, tts=body.tts)
 
 
 @router.post("/stt")
@@ -186,152 +152,6 @@ async def synthesize_speech(
     return StreamingResponse(_stream(), media_type=mgr.media_type(body.provider))
 
 
-async def _ws_send_json(websocket: WebSocket, payload: dict[str, Any]) -> None:
-    if websocket.application_state != WebSocketState.CONNECTED:
-        return
-    with contextlib.suppress(WebSocketDisconnect, RuntimeError):
-        await websocket.send_text(json.dumps(payload, ensure_ascii=False))
-
-
-async def _ws_error(
-    websocket: WebSocket,
-    code: ErrorCode,
-    locale: Locale,
-    *,
-    tencent_code: int | None = None,
-) -> None:
-    message = (
-        realtime_error_message(tencent_code, locale)
-        if tencent_code is not None
-        else OiError(code, "").localized_message(locale)
-    )
-    await _ws_send_json(
-        websocket,
-        {
-            "type": "error",
-            "code": code.value,
-            "message": message,
-            "tencent_code": tencent_code,
-        },
-    )
-
-
-def _is_end_frame(raw: str) -> bool:
-    try:
-        control = json.loads(raw)
-    except json.JSONDecodeError:
-        return False
-    return isinstance(control, dict) and control.get("type") == "end"
-
-
-async def _pump_events(
-    session: realtime.TencentRealtimeSession, websocket: WebSocket, locale: Locale
-) -> None:
-    """Forward upstream recognition events to the browser until the stream ends."""
-    async for event in session.events():
-        if event.kind == "error":
-            await _ws_error(
-                websocket,
-                ErrorCode.VOICE_REALTIME_UNAVAILABLE,
-                locale,
-                tencent_code=event.error_code,
-            )
-            await _ws_send_json(websocket, {"type": "done"})
-            return
-
-        if event.kind == "done":
-            await _ws_send_json(websocket, {"type": "done"})
-            return
-
-        await _ws_send_json(
-            websocket,
-            {
-                "type": event.kind,
-                "text": event.text,
-                "sentence_id": event.sentence_id,
-            },
-        )
-
-
-@router.websocket("/stt-stream")
-async def stream_transcription(
-    websocket: WebSocket,
-    token: str | None = Query(default=None),
-    locale: str | None = Query(default=None),
-) -> None:
-    """Proxy one realtime ASR session to Tencent Cloud over WebSocket.
-
-    The browser sends 16 kHz PCM16 mono frames as binary messages and
-    ``{"type": "end"}`` when it is done; the server replies with ``ready`` /
-    ``interim`` / ``final`` / ``done`` / ``error`` JSON messages.
-    """
-    server = websocket.app.state.oi_server
-    if not token:
-        await websocket.close(code=4001, reason="missing token")
-        return
-    try:
-        resolve_user_from_token(server, token)
-    except OiError as exc:
-        await websocket.close(code=4001, reason=f"auth failed: {exc.code.value}")
-        return
-
-    await websocket.accept()
-    lang = normalize_locale(locale) if locale else resolve_request_locale(websocket)
-
-    config = _voice_manager(server).realtime_stt_config()
-    if config is None:
-        await _ws_error(websocket, ErrorCode.VOICE_REALTIME_UNAVAILABLE, lang)
-        await websocket.close(code=4004, reason="realtime STT is not configured")
-        return
-
-    session = realtime.open_session(config)
-    reader: asyncio.Task[None] | None = None
-    try:
-        try:
-            await session.connect()
-        except OiError as exc:
-            tencent_code = exc.details.get("tencent_code")
-            await _ws_error(
-                websocket,
-                exc.code,
-                lang,
-                tencent_code=tencent_code if isinstance(tencent_code, int) else None,
-            )
-            await websocket.close(code=4004, reason="upstream connect failed")
-            return
-
-        await _ws_send_json(websocket, {"type": "ready"})
-        reader = asyncio.create_task(_pump_events(session, websocket, lang))
-
-        while websocket.application_state == WebSocketState.CONNECTED:
-            message = await websocket.receive()
-            if message.get("type") == "websocket.disconnect":
-                break
-            chunk = message.get("bytes")
-            if chunk is not None:
-                await session.send_audio(chunk)
-                continue
-            raw = message.get("text")
-            if raw and _is_end_frame(raw):
-                await session.finish()
-                break
-
-        if reader is not None:
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(reader, timeout=realtime.READER_TIMEOUT_SECONDS)
-    except WebSocketDisconnect:
-        pass
-    finally:
-        if reader is not None and not reader.done():
-            reader.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await reader
-        await session.close()
-        if websocket.application_state == WebSocketState.CONNECTED:
-            with contextlib.suppress(RuntimeError, WebSocketDisconnect):
-                await websocket.close()
-
-
 @admin_router.get("")
 async def admin_list_voice_providers(
     _: Any = Depends(require_permission("voice")),
@@ -348,7 +168,9 @@ async def admin_create_voice_provider(
 ) -> dict[str, Any]:
     repo = server.services.voice_provider_repo
     if repo.get_by_name(body.name):
-        raise OiError(ErrorCode.PROVIDER_NAME_TAKEN, f"voice provider {body.name!r} already exists")
+        raise OiError(
+            ErrorCode.PROVIDER_NAME_TAKEN, f"voice provider {body.name!r} already exists"
+        )
     pid = repo.create(
         name=body.name,
         kind=body.kind,

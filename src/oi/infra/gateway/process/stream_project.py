@@ -20,7 +20,6 @@ from oi.infra.gateway.process.agent_resolve import harness_workspace_for_agent
 from oi.infra.gateway.process.usage_record import UsageTracker
 from oi.infra.history.projection import TurnHistoryTracker
 from oi.infra.utils.locale import DEFAULT_LOCALE, Locale, normalize_locale
-from oi.infra.utils.turn_failure import log_failed_tool_results
 
 if TYPE_CHECKING:
     from oi.infra.agents.manager import AgentManager
@@ -49,7 +48,6 @@ class _ToolProjectionState:
     # Track tool_call_ids whose media we've already emitted to prevent
     # re-emission when PatchToolCallsMiddleware emits Overwrite(full_history).
     emitted_media_ids: set[str] = field(default_factory=set)
-    emitted_tool_error_ids: set[str] = field(default_factory=set)
 
 
 def enrich_tool_stream_chunk(
@@ -120,8 +118,9 @@ async def _project_chunks(
         if history_tracker is not None:
             history_tracker.observe(chunk)
             from oi.infra.history.recorder import flush_tracker  # noqa: PLC0415
+            from oi.infra.optimizations import maybe_batch_flush  # noqa: PLC0415
 
-            await flush_tracker(history_tracker)
+            await maybe_batch_flush(history_tracker, flush_tracker)
         ctype: str = chunk.get("type", "")
         node: str | None = chunk.get("node")
 
@@ -160,13 +159,6 @@ async def _project_chunks(
                 yield _tool_start(tool_state.tool_name_buf[idx_key])
 
         elif ctype == "tool_result":
-            log_failed_tool_results(
-                chunk,
-                agent_id=agent_id,
-                thread_id=(hitl_ctx.thread_id if hitl_ctx is not None else ""),
-                seen=tool_state.emitted_tool_error_ids,
-                live=tool_state.saw_tool_call,
-            )
             final_name = (
                 tool_state.tool_name_buf.get(tool_state.active_tool_idx or "", "") or "tool"
             )

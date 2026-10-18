@@ -26,7 +26,9 @@ class AgentConnectionSettingsResponse(BaseModel):
     keepalive_seconds: int = Field(
         description="WebSocket/keepalive ping interval in seconds (5-600)."
     )
-    max_concurrent_sessions: int = Field(description="Max concurrent sessions per agent (1-64).")
+    max_concurrent_sessions: int = Field(
+        description="Max concurrent sessions per agent (1-64)."
+    )
     idle_disconnect_minutes: int = Field(
         description="Minutes of inactivity before an idle session is disconnected (0-1440; 0 disables)."
     )

@@ -439,7 +439,9 @@ def _install(workspace: Path, skills: list[dict[str, Any]], *, force: bool) -> l
     skills_dir.mkdir(parents=True, exist_ok=True)
     reserved = [item["slug"] for item in skills if item["slug"] in RESERVED_SKILL_SLUGS]
     if reserved:
-        raise SkillManagerError("cannot replace an Oi-owned built-in skill: " + ", ".join(reserved))
+        raise SkillManagerError(
+            "cannot replace an Oi-owned built-in skill: " + ", ".join(reserved)
+        )
     conflicts = [item["slug"] for item in skills if (skills_dir / item["slug"]).exists()]
     if conflicts and not force:
         raise SkillManagerError(

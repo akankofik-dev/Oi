@@ -1,19 +1,7 @@
-import type { OiUiHint, ParsedToolOutput } from "./types";
-
-function asOiUi(value: unknown): OiUiHint | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const obj = value as Record<string, unknown>;
-  const renderer = typeof obj.renderer === "string" ? obj.renderer.trim() : "";
-  if (!renderer) return undefined;
-  const version =
-    typeof obj.version === "number" && Number.isFinite(obj.version)
-      ? obj.version
-      : undefined;
-  return version === undefined ? { renderer } : { renderer, version };
-}
+import type { ParsedToolOutput } from "./types";
 
 /**
- * Parse tool ``output`` for the ``oi_ui`` envelope.
+ * Parse tool ``output``.
  * Accepts a JSON string or an already-parsed object.
  */
 export function parseOiToolOutput(output: unknown): ParsedToolOutput {
@@ -33,7 +21,7 @@ export function parseOiToolOutput(output: unknown): ParsedToolOutput {
     return {
       isJson: true,
       raw: output,
-      oiUi: asOiUi(obj.oi_ui),
+      oiUi: undefined,
       data: "data" in obj ? obj.data : undefined,
       text: typeof obj.text === "string" ? obj.text : undefined,
     };
@@ -53,7 +41,7 @@ export function parseOiToolOutput(output: unknown): ParsedToolOutput {
       };
     }
     const obj = raw as Record<string, unknown>;
-    const oiUi = asOiUi(obj.oi_ui);
+    const oiUi = undefined;
     const text = typeof obj.text === "string" ? obj.text : undefined;
     const data = "data" in obj ? obj.data : undefined;
     return { isJson: true, raw, oiUi, data, text };
