@@ -39,12 +39,20 @@ import click
     default=False,
     help="Skip all interactive prompts.",
 )
+@click.option(
+    "--skip-admin",
+    "skip_admin",
+    is_flag=True,
+    default=False,
+    help="Skip creating the admin user; create it in the setup wizard on first launch.",
+)
 def init(
     admin_username: str | None,
     admin_password: str | None,
     admin_display_name: str | None,
     force: bool,
     non_interactive: bool,
+    skip_admin: bool,
 ) -> None:
     """Bootstrap an Oi server (~/.oi dir, DB migrations, first admin)."""
     from oi.config import load_config
@@ -94,24 +102,26 @@ def init(
         if not non_interactive:
             from oi.cli.support import prompts as _prompts
 
-            if not username:
+            if not username and not skip_admin:
                 username = _prompts.text("Admin username:")
-            if not password:
+            if not password and not skip_admin:
                 password = _prompts.password("Admin password:")
-            if display_name is None:
+            if display_name is None and not skip_admin:
                 display_name = _prompts.text("Display name (optional):", default="") or None
 
-        if not username:
+        if not username and not skip_admin:
             click.echo("error: admin username is required", err=True)
             raise SystemExit(1)
         try:
-            validate_password_policy(password or "")
+            validate_password_policy(password or "") if not skip_admin else None
         except OiError as exc:
             click.echo(f"error: {exc.message}", err=True)
             raise SystemExit(1) from None
 
         user_repo = UserRepo(db)
-        if user_repo.get_by_username(username) is not None:
+        if skip_admin:
+            pass  # Skipped: the setup wizard creates the first admin.
+        elif user_repo.get_by_username(username) is not None:
             # 幂等引导（issue #1866）：外部数据库（PostgreSQL）不会在 ~/.oi
             # 生成 oi.db，容器重启后 entrypoint 会重跑 init；此时跳过创建，
             # 避免管理员 INSERT 撞 UNIQUE(username) 直接崩溃。
@@ -127,5 +137,8 @@ def init(
         db.close()
 
     click.echo(f"\u2705 Oi bootstrapped at {home}")
-    click.echo(f"   admin user: {username}")
+    if skip_admin:
+        click.echo("  admin user: skipped (--skip-admin)")
+    else:
+        click.echo(f"  admin user: {username}")
     click.echo("   next: `oi run` (optional: `oi agent use <id>` to pin default agent)")
