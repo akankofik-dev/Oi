@@ -157,8 +157,9 @@ _HARNESS_AGENT_CONFIG_FIELDS = frozenset(item.name for item in fields(HarnessAge
 INDONESIAN_THINKING_INSTRUCTION = (
     "[Berpikir dalam Bahasa Indonesia]\n"
     "Selalu lakukan seluruh penalaran (thinking / chain-of-thought) dalam "
-    "Bahasa Indonesia, apa pun bahasa pesan pengguna. Jawaban akhir boleh "
-    "mengikuti bahasa pengguna."
+    "Bahasa Indonesia, apa pun bahasa pesan pengguna. Bungkus seluruh penalaran "
+    "dalam tag <think>...</think>, lalu tulis jawaban akhir SETELAH tag penutup "
+    "</think>. Jawaban akhir boleh mengikuti bahasa pengguna."
 )
 
 
