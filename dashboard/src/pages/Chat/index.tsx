@@ -88,6 +88,7 @@ import {
 } from "./ChatToolDockContext";
 import ChatSidebarPanel from "./components/ChatSidebarPanel";
 import ChatTitleBar from "./components/ChatTitleBar";
+import ChatZoomToggle from "./components/ChatZoomToggle";
 import TeamChatBadge from "./components/TeamChatBadge";
 import ChatComposerChrome from "./components/ChatComposerChrome";
 import AskQuestionCard from "./components/AskQuestionCard";
@@ -1282,6 +1283,7 @@ function ChatPageInner() {
                 )}
                 {resolvedAgentId && !sharedExpertViewer && (
                   <div className={styles.mobileToolbarRight}>
+        <ChatZoomToggle />
                     <button
                       className={styles.menuBtn}
                       onClick={() => setAgentProfileOpen(true)}

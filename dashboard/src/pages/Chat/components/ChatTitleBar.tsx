@@ -17,6 +17,7 @@ import TeamChatBadge from "./TeamChatBadge";
 import styles from "../index.module.less";
 import { DESKTOP_DRAG_REGION_CLASS } from "../../../utils/desktopChrome";
 import { useCollapseThinking } from "../hooks/useCollapseThinking";
+import ChatZoomToggle from "./ChatZoomToggle";
 
 interface ChatTitleBarProps {
   session: Session;
@@ -200,6 +201,7 @@ export default function ChatTitleBar({
           </div>
         )}
       </div>
+      <ChatZoomToggle />
     </div>
   );
 }
