@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import inspect
 import logging
 from typing import Any
 
@@ -18,7 +19,31 @@ from oi_gateway.models import (
     TextContent,
     VideoContent,
 )
-from oi_gateway.utils import close_event_stream
+try:
+    from oi_gateway.utils import close_event_stream
+except ImportError:  # oi-gateway tanpa close_event_stream (mis. v1.0.0)
+    async def close_event_stream(stream: Any) -> None:
+        """Tutup stream event secara graceful (fallback lokal).
+
+        Dipakai saat oi_gateway yang terinstal belum menyediakan
+        ``close_event_stream``: tutup async generator via ``aclose()``,
+        lalu ``close()`` (sync/async), lalu ``cancel()`` untuk task.
+        """
+        if stream is None:
+            return
+        aclose = getattr(stream, "aclose", None)
+        if callable(aclose):
+            await aclose()
+            return
+        close = getattr(stream, "close", None)
+        if callable(close):
+            result = close()
+            if inspect.isawaitable(result):
+                await result
+            return
+        cancel = getattr(stream, "cancel", None)
+        if callable(cancel):
+            cancel()
 
 from oi.i18n.domains.stream import format_stream_error
 from oi.infra.gateway.media.attachment_hints import (
