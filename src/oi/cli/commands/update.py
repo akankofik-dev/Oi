@@ -34,7 +34,7 @@ def update(check: bool, yes: bool, verbose: bool, allow_prerelease: bool) -> Non
     click.echo(f"installed: {current}")
     if info is None:
         click.echo(
-            "could not reach PyPI — check your network or proxy settings and retry",
+            "could not reach the update server — check your network or proxy settings and retry",
             err=True,
         )
         raise SystemExit(1)

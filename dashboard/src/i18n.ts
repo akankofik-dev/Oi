@@ -14,6 +14,9 @@ async function loadLocaleBundle(locale: UiLocale) {
   if (locale === "zh") {
     return (await import("./locales/zh.json")).default;
   }
+  if (locale === "id") {
+    return (await import("./locales/id.json")).default;
+  }
   return (await import("./locales/en.json")).default;
 }
 

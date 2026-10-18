@@ -6,6 +6,7 @@ import { preferencesApi } from "../../../api/modules/preferences";
 import { applyUserLocale } from "../../../utils/locale";
 
 const languages = [
+  { value: "id", label: "Bahasa Indonesia" },
   { value: "en", label: "English" },
   { value: "zh", label: "简体中文" },
 ];

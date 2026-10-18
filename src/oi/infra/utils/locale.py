@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Literal
 
-Locale = Literal["zh", "en"]
+Locale = Literal["zh", "en", "id"]
 
 DEFAULT_LOCALE: Locale = "zh"
-SUPPORTED_LOCALES: tuple[Locale, ...] = ("zh", "en")
+SUPPORTED_LOCALES: tuple[Locale, ...] = ("zh", "en", "id")
 
 
 def normalize_locale(raw: str | None) -> Locale:
@@ -16,6 +16,8 @@ def normalize_locale(raw: str | None) -> Locale:
     lower = raw.lower().replace("_", "-")
     if lower.startswith("zh"):
         return "zh"
+    if lower.startswith("id"):
+        return "id"
     return "en"
 
 
@@ -38,6 +40,8 @@ def resolve_locale(
     im_zh = {"feishu", "wecom", "weixin", "dingtalk", "qq", "xiaoyi", "yuanbao"}
     if channel_type in im_zh:
         return "zh"
+    if lower.startswith("id"):
+        return "id"
     if channel_type == "telegram":
         return "en"
     return DEFAULT_LOCALE
