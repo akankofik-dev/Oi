@@ -87,7 +87,7 @@ export function initI18n(): Promise<void> {
   if (!initPromise) {
     initPromise = (async () => {
       const initial = resolveInitialLocale();
-      const fallback: UiLocale = initial === "zh" ? "en" : "zh";
+      const fallback: UiLocale = initial === "id" ? "en" : "id";
       const primaryBundle = await loadLocaleBundle(initial);
 
       await i18n.use(initReactI18next).init({

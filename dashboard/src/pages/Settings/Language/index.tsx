@@ -4,6 +4,7 @@ import { message } from "@/utils/antdMessage";
 
 import { preferencesApi } from "../../../api/modules/preferences";
 import { applyUserLocale } from "../../../utils/locale";
+import { normalizeUiLocale } from "../../../utils/localePrefs";
 
 const languages = [
   { value: "id", label: "Bahasa Indonesia" },
@@ -48,7 +49,7 @@ export default function LanguagePage() {
       </p>
 
       <Radio.Group
-        value={i18n.language?.startsWith("zh") ? "zh" : "en"}
+        value={normalizeUiLocale(i18n.language)}
         onChange={(e) => void handleChange(e.target.value)}
       >
         <Space direction="vertical" size={12}>

@@ -4,7 +4,7 @@ export const UI_LOCALE_STORAGE_KEY = "oi:ui-locale";
 
 /** Map browser language tags to a supported dashboard locale. */
 export function detectBrowserLocale(): UiLocale {
-  if (typeof navigator === "undefined") return "en";
+  if (typeof navigator === "undefined") return "id";
 
   const candidates =
     navigator.languages?.length > 0
@@ -23,15 +23,15 @@ export function detectBrowserLocale(): UiLocale {
   if (primary.startsWith("id")) return "id";
   if (primary.startsWith("en")) return "en";
 
-  return "en";
+  return "id";
 }
 
 export function normalizeUiLocale(raw: string | null | undefined): UiLocale {
-  if (!raw) return "zh";
+  if (!raw) return "id";
   const v = raw.toLowerCase();
   if (v.startsWith("zh")) return "zh";
   if (v.startsWith("id")) return "id";
-  return "en";
+  return "id";
 }
 
 export function readStoredUiLocale(): UiLocale | null {
