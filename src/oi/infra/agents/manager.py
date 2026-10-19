@@ -3307,15 +3307,13 @@ class AgentManager:
             return refs
 
         def _build_chat_model(ref: str) -> Any:
-            from oi.infra.agents.failover_429 import build_failover_model
-            harness_manager = self._harness_manager
+                        harness_manager = self._harness_manager
             factory = (
                 harness_manager.shared_factory
                 if harness_manager is not None
                 else None
             )
-            # 429 failover: wrap model to auto-retry with alternatives on rate limit
-            return build_failover_model(ref, factory, self._providers)
+                    return factory(ref)
 
         # LLM resilience middleware DINONAKTIFKAN sementara (menyebabkan hang).
         # Kembali ke perilaku original.
