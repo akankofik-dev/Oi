@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import styles from "../index.module.less";
 
-const MIN_ZOOM = 0.8;
+const MIN_ZOOM = 0.7;
 const MAX_ZOOM = 1.3;
 const STEP = 0.1;
 const STORAGE_KEY = "oi-chat-zoom";
@@ -18,6 +18,9 @@ function loadZoom(): number {
 
 function applyZoomToLists(zoom: number) {
   document.querySelectorAll('[class*="messageList"]').forEach((el) => {
+    const cn = (el as HTMLElement).className || "";
+    // Skip nested elements to avoid compounded zoom (0.7^3=34% causes blank)
+    if (cn.includes("messageListInner") || cn.includes("messageListWrapper") || cn.includes("messageListLoading")) return;
     (el as HTMLElement).style.zoom = String(zoom);
   });
 }
