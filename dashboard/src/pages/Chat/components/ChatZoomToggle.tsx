@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import styles from "../index.module.less";
 
-const MIN_ZOOM = 0.7;
+const MIN_ZOOM = 0.8;
 const MAX_ZOOM = 1.3;
 const STEP = 0.1;
 const STORAGE_KEY = "oi-chat-zoom";
