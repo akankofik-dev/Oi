@@ -134,6 +134,16 @@ def init(
                     "Skipping admin user (setup wizard in web UI will create it)",
                     lambda: None,
                 )
+            elif UserRepo(db).get_by_username(username) is not None:
+                # Idempotent bootstrap (issue #1866): external-DB layouts
+                # leave no local oi.db, so a rerun (e.g. container entrypoint)
+                # must skip instead of crashing on UNIQUE(username).
+                steps.run(
+                    "Creating admin user",
+                    lambda: click.echo(
+                        f"  admin user '{username}' already exists, skipping."
+                    ),
+                )
             else:
                 steps.run(
                     "Creating admin user",
