@@ -7,7 +7,7 @@ from oi.i18n.loader import all_keys_for_locale
 
 def test_mobile_keys_parity() -> None:
     en_keys = {k for k in all_keys_for_locale("en") if k.startswith("mobile.")}
-    zh_keys = {k for k in all_keys_for_locale("zh") if k.startswith("mobile.")}
-    assert en_keys == zh_keys
+    id_keys = {k for k in all_keys_for_locale("id") if k.startswith("mobile.")}
+    assert en_keys == id_keys
     assert "mobile.no_device" in en_keys
     assert "mobile.handoff_message" in en_keys

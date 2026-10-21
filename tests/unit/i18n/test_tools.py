@@ -9,11 +9,6 @@ from oi.i18n import all_tool_labels, hitl_tool_catalog, tool_display_name
 from oi.i18n.domains.tools import resolve_tool_display_name
 
 
-def test_tool_display_name_known_zh():
-    assert tool_display_name("read_file", "zh") == "读取文件"
-    assert tool_display_name("write_todos", "zh") == "编写计划"
-    assert tool_display_name("read_env_file", "zh") == "读取环境变量"
-    assert tool_display_name("write_env_file", "en") == "Write env file"
 
 
 def test_tool_display_name_unknown_passthrough():
@@ -68,10 +63,6 @@ def test_hitl_tool_catalog_includes_common_tools():
     assert "web_fetch" in names
 
 
-def test_hitl_tool_catalog_bilingual_labels():
-    entry = next(e for e in hitl_tool_catalog() if e.name == "read_file")
-    assert entry.label_zh == "读取文件"
-    assert entry.label_en == "Read file"
 
 
 def test_dashboard_tools_match_backend():

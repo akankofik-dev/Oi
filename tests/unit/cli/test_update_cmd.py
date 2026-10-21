@@ -64,7 +64,7 @@ def test_update_yes_runs_upgrade(monkeypatch: pytest.MonkeyPatch) -> None:
     assert called.get("ran") is True
     assert called["kwargs"]["version"] == "9.9.9"
     assert called["kwargs"]["allow_prerelease"] is False
-    assert "/home/user/.oi/venv/bin/python" in result.output
+    assert "9.9.9" in result.output
 
 
 def test_update_already_latest(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -84,23 +84,33 @@ def test_update_already_latest(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "up to date" in result.output.lower()
 
 
-def test_build_upgrade_command_uses_managed_venv_python() -> None:
+def test_build_upgrade_command_uses_managed_venv_python(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OI_GREEN_PACKAGES", raising=False)
     python = "/home/user/.oi/venv/bin/python"
-    cmd = self_update.build_upgrade_command("uv", python, index_url="https://mirror.example/simple")
+    wheel = self_update.github_wheel_url("0.9.33")
+    cmd = self_update.build_upgrade_command("uv", python, version="0.9.33", wheel_url=wheel)
     assert cmd is not None
     assert "--python" in cmd
     assert python in cmd
     assert "--upgrade-package" in cmd
     assert "oi" in cmd
-    assert "https://mirror.example/simple" in cmd
+    assert wheel in cmd
     assert "--target" not in cmd
 
 
-def test_build_upgrade_command_pins_version() -> None:
+def test_build_upgrade_command_pins_version_via_github_wheel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OI_GREEN_PACKAGES", raising=False)
     python = "/home/user/.oi/venv/bin/python"
-    cmd = self_update.build_upgrade_command("uv", python, version="0.9.33")
+    cmd = self_update.build_upgrade_command(
+        "uv", python, version="0.9.33", wheel_url=self_update.github_wheel_url("0.9.33")
+    )
     assert cmd is not None
-    assert "oi==0.9.33" in cmd
+    assert self_update.github_wheel_url("0.9.33") in cmd
+    assert "oi==0.9.33" not in cmd
     assert "--prerelease" not in cmd
 
 
@@ -111,7 +121,9 @@ def test_build_upgrade_command_green_packages_target(
     packages.mkdir()
     monkeypatch.setenv("OI_GREEN_PACKAGES", str(packages))
     python = "/opt/oi/runtime/bin/python3"
-    cmd = self_update.build_upgrade_command("uv", python)
+    cmd = self_update.build_upgrade_command(
+        "uv", python, version="0.9.33", wheel_url=self_update.github_wheel_url("0.9.33")
+    )
     assert cmd is not None
     assert "--target" in cmd
     assert str(packages) in cmd

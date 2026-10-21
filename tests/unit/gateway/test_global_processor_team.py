@@ -92,7 +92,7 @@ def test_compose_followup_uses_peer_display_name(processor_env: dict) -> None:
     text = processor.compose_followup(msg, result_text="findings", error_text=None)
     assert "Researcher" in text
     assert "findings" in text
-    assert "do not" in text.lower() or "不要" in text
+    assert "jangan" in text.lower()
 
 
 def test_compose_followup_team_host_asks_for_wrapup(processor_env: dict) -> None:
@@ -109,8 +109,8 @@ def test_compose_followup_team_host_asks_for_wrapup(processor_env: dict) -> None
     text = processor.compose_followup(msg, result_text="findings", error_text=None)
     assert "Researcher" in text
     assert "findings" in text
-    assert "Member answer" in text or "成员正文" in text
-    assert "do not" in text.lower() or "不要" in text
+    assert "Jawaban anggota" in text
+    assert "jangan" in text.lower()
 
 
 def test_compose_followup_truncates_long_member_result(processor_env: dict) -> None:
@@ -936,7 +936,7 @@ async def test_prepare_team_dispatch_includes_room_history(
     assert question == "survey market"
     assert "what is the market?" in dispatch
     assert "I will ask Researcher" in dispatch
-    assert "Team assignment" in dispatch or "团队派工" in dispatch
+    assert "Penugasan tim" in dispatch
     taken = processor.teams.take_peer_prompt("child", "thr_parent~child")
     assert taken == pair
     assert harness.aget_history.await_count >= 1
@@ -1835,7 +1835,7 @@ async def test_prepare_team_peer_pushes_dispatch_notice_to_im(
     )
     assert len(pushed) == 1
     assert "Researcher" in pushed[0]
-    assert ("请稍候" in pushed[0]) or ("please wait" in pushed[0].lower())
+    assert "mohon tunggu" in pushed[0].lower()
 
 
 @pytest.mark.asyncio
@@ -1925,7 +1925,7 @@ async def test_on_reply_live_wrapup_still_pushes_im(processor_env: dict) -> None
             metadata={"session_key": processor_env["parent_sk"]},
         )
     )
-    assert pushed == ["【主持人总结】可以收工。"] or pushed == ["[Host wrap-up] 可以收工。"]
+    assert pushed == ["[Penutup host] 可以收工。"]
     assert "thr_parent" not in processor.teams._live_host_replies
 
 
@@ -2017,7 +2017,8 @@ async def test_on_reply_failed_releases_job(processor_env: dict) -> None:
     )
     assert not jobs.is_busy("host", "child")
     assert any(
-        frame.get("type") == "error" and "失败" in str(frame.get("message")) for frame in frames
+        frame.get("type") == "error" and "gagal" in str(frame.get("message")).lower()
+        for frame in frames
     )
     assert not any(frame.get("type") == "token" for frame in frames)
     assert frames[-1]["type"] == "done"

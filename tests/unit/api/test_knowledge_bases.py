@@ -746,16 +746,16 @@ class TestRestartRequiredMapping:
         from oi.api.routers.knowledge_bases import _map_knowledge_error
         from oi.infra.errors import ErrorCode
 
-        err = _map_knowledge_error(RuntimeError(self.RESTART_HINT), locale="zh")
+        err = _map_knowledge_error(RuntimeError(self.RESTART_HINT), locale="id")
 
         assert err.code is ErrorCode.KNOWLEDGE_PREREQUISITES_RESTART_REQUIRED
-        assert "重启" in err.localized_message("zh")
+        assert "Mulai ulang" in err.localized_message("id")
         assert "restart" in err.localized_message("en").lower()
 
     def test_other_prerequisite_failures_keep_the_generic_error(self) -> None:
         from oi.api.routers.knowledge_bases import _map_knowledge_error
         from oi.infra.errors import ErrorCode
 
-        err = _map_knowledge_error(RuntimeError("embedding provider is not ready"), locale="zh")
+        err = _map_knowledge_error(RuntimeError("embedding provider is not ready"), locale="id")
 
         assert err.code is ErrorCode.KNOWLEDGE_PREREQUISITES_FAILED

@@ -407,7 +407,7 @@ def test_build_status_failure_via_check_keeps_error_code(
 
 
 @pytest.mark.asyncio
-async def test_check_endpoint_reports_error_code_when_pypi_unreachable(
+async def test_check_endpoint_reports_error_code_when_github_unreachable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(update_router, "fetch_pypi_info", lambda: None)
@@ -415,8 +415,8 @@ async def test_check_endpoint_reports_error_code_when_pypi_unreachable(
     result = await update_router.check_for_updates(_=None, server=_settings_server())
 
     assert result["latest_version"] is None
-    assert result["error"] == "could not reach PyPI"
-    assert result["error_code"] == "pypi_unreachable"
+    assert result["error"] == "could not reach GitHub Releases"
+    assert result["error_code"] == "github_unreachable"
 
 
 @pytest.mark.asyncio
@@ -513,27 +513,23 @@ async def test_trigger_upgrade_pins_stable_when_prerelease_exists(
         *,
         allow_prerelease: bool = False,
         version: str | None = None,
-        locale: str = "zh",
     ) -> None:
         captured["task_id"] = task_id
         captured["allow_prerelease"] = allow_prerelease
         captured["version"] = version
-        captured["locale"] = locale
 
     monkeypatch.setattr(update_router, "_upgrade_worker", fake_worker)
 
     body = update_router.UpgradeBody(version="0.9.33")
     result = await update_router.trigger_upgrade(
-        request=Request({"type": "http", "headers": [(b"accept-language", b"en")]}),
         body=body,
         server=_settings_server(True),
-        _=type("User", (), {"locale": "zh"})(),
+        _=None,
     )
     await asyncio.sleep(0)
     assert result["status"] == "started"
     assert captured["version"] == "0.9.33"
     assert captured["allow_prerelease"] is False
-    assert captured["locale"] == "zh"
 
 
 @pytest.mark.asyncio
@@ -552,16 +548,13 @@ async def test_trigger_upgrade_defaults_to_channel_latest(
         *,
         allow_prerelease: bool = False,
         version: str | None = None,
-        locale: str = "zh",
     ) -> None:
         captured["allow_prerelease"] = allow_prerelease
         captured["version"] = version
-        captured["locale"] = locale
 
     monkeypatch.setattr(update_router, "_upgrade_worker", fake_worker)
 
     result = await update_router.trigger_upgrade(
-        request=Request({"type": "http", "headers": [(b"accept-language", b"en")]}),
         body=update_router.UpgradeBody(),
         server=_settings_server(True),
         _=None,
@@ -570,7 +563,6 @@ async def test_trigger_upgrade_defaults_to_channel_latest(
     assert result["status"] == "started"
     assert captured["version"] == "0.9.33"
     assert captured["allow_prerelease"] is False
-    assert captured["locale"] == "en"
 
 
 @pytest.mark.asyncio
@@ -588,7 +580,6 @@ async def test_trigger_upgrade_rejects_non_newer_target_without_starting_task(
     monkeypatch.setattr(update_router, "create_task", unexpected_task)
     with pytest.raises(OiError) as exc_info:
         await update_router.trigger_upgrade(
-            request=Request({"type": "http", "headers": []}),
             body=update_router.UpgradeBody(version=requested),
             server=_settings_server(True),
             _=None,

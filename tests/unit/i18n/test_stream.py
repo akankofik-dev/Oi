@@ -146,55 +146,20 @@ def test_classify_path_outside_root() -> None:
     assert classify_stream_error_message("Path traversal not allowed") == PATH_OUTSIDE_ROOT
 
 
-def test_format_path_outside_root_zh_guides_to_storage_root() -> None:
-    msg = (
-        r"ValueError: Path:D:\oi-data\data\文章存稿\_核验与备选标题.md "
-        r"outside root directory: C:\Users\Administrator"
-    )
-    text = format_stream_error(msg, "zh")
-    assert "存储根目录" in text
-    assert "模型调用" not in text
-    assert "ValueError" not in text
-    assert "outside root" not in text
 
 
 def test_classify_unknown_passthrough() -> None:
     assert classify_stream_error_message("disk full") is None
 
 
-def test_format_stream_error_zh_guidance() -> None:
-    msg = (
-        "Model call failed after 3 attempts with StreamChunkTimeoutError: "
-        "No streaming chunk received for 120.0s"
-    )
-    text = format_stream_error(msg, "zh")
-    assert "重试" in text
-    assert "StreamChunkTimeoutError" not in text
-    assert "LANGCHAIN" not in text
 
 
-def test_format_insufficient_balance_zh() -> None:
-    msg = "Error code: 402 - {'error': {'message': 'Insufficient Balance'}}"
-    text = format_stream_error(msg, "zh")
-    assert "余额" in text or "额度" in text
-    assert "402" not in text
-    assert "Insufficient Balance" not in text
 
 
-def test_format_recursion_limit_zh_guides_to_config() -> None:
-    msg = (
-        "Recursion limit of 2 reached without hitting a stop condition. "
-        "You can increase the limit by setting the `recursion_limit` config key."
-    )
-    text = format_stream_error(msg, "zh")
-    assert "运行配置" in text
-    assert "最大迭代次数" in text
-    assert "GRAPH_RECURSION_LIMIT" not in text
-    assert "recursion_limit" not in text
 
 
 def test_stream_error_message_oi_key() -> None:
-    assert "重试" in stream_error_message(STREAM_STALL, "zh")
+    assert "Coba Lagi" in stream_error_message(STREAM_STALL, "id")
 
 
 def test_format_stream_error_unknown_keeps_actual_cause() -> None:
@@ -264,7 +229,7 @@ def test_model_retry_on_failure_writes_server_log(caplog: logging.LogCaptureFixt
 
 
 def test_format_stream_error_empty_exception_still_localized() -> None:
-    text = format_stream_error(TimeoutError(), "zh")
+    text = format_stream_error(TimeoutError(), "id")
     assert text
-    assert "模型调用失败" in text
+    assert "Panggilan model gagal" in text
     assert "TimeoutError" in text

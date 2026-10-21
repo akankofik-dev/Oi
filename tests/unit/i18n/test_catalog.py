@@ -8,16 +8,18 @@ from oi.i18n import all_keys_for_locale, tr
 from oi.infra.gateway.slash.catalog import CATALOG, category_label
 
 
-def test_en_and_zh_share_same_keys():
+def test_en_and_id_share_same_keys():
     en_keys = all_keys_for_locale("en")
-    zh_keys = all_keys_for_locale("zh")
-    assert en_keys == zh_keys
+    id_keys = all_keys_for_locale("id")
+    assert en_keys == id_keys
     assert "errors.AGENT_NAME_TAKEN" in en_keys
 
 
-def test_tr_fallback_to_en():
+def test_tr_locales_and_removed_zh_fallback():
     assert tr("slash.help.title", "en") == "Available commands"
-    assert tr("slash.help.title", "zh") == "可用指令"
+    assert tr("slash.help.title", "id") == "Perintah yang tersedia"
+    # zh was removed as a UI locale; it now resolves to Indonesian.
+    assert tr("slash.help.title", "zh") == "Perintah yang tersedia"
 
 
 def test_tr_interpolation():
@@ -38,4 +40,4 @@ def test_catalog_labels_match_json():
 
 def test_category_labels():
     assert category_label("core", "en") == "Core"
-    assert category_label("core", "zh") == "核心命令"
+    assert category_label("core", "id") == "Inti"

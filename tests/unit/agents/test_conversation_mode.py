@@ -89,7 +89,7 @@ def test_rewritten_plan_write_lands_in_workspace_not_container_root(tmp_path: Pa
 
 
 def test_execute_user_message() -> None:
-    assert execute_user_message("plans/foo.md", "zh") == "请按 plans/foo.md 执行"
+    assert execute_user_message("plans/foo.md", "id") == "Jalankan plans/foo.md"
     assert execute_user_message("plans/foo.md", "en") == "Execute plans/foo.md"
 
 

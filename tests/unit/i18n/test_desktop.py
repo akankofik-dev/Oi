@@ -7,8 +7,8 @@ from oi.i18n import all_keys_for_locale, tr
 
 def test_desktop_keys_parity() -> None:
     en_keys = {k for k in all_keys_for_locale("en") if k.startswith("desktop.")}
-    zh_keys = {k for k in all_keys_for_locale("zh") if k.startswith("desktop.")}
-    assert en_keys == zh_keys
+    id_keys = {k for k in all_keys_for_locale("id") if k.startswith("desktop.")}
+    assert en_keys == id_keys
     assert "desktop.install_log_system" in en_keys
     assert "desktop.install_log_build_deps" in en_keys
     assert "desktop.error_el10_unsupported" in en_keys

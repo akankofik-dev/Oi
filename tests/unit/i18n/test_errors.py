@@ -19,21 +19,19 @@ def test_every_error_code_has_i18n_entry():
         assert error_message(code.value, "zh")
 
 
-def test_error_message_zh():
-    assert "名称" in error_message("AGENT_NAME_TAKEN", "zh")
 
 
 def test_oi_error_localized_factory():
-    err = OiError.localized(ErrorCode.FORBIDDEN, "zh")
+    err = OiError.localized(ErrorCode.FORBIDDEN, "id")
     assert err.code is ErrorCode.FORBIDDEN
-    assert err.message == "没有权限。"
+    assert err.message == "Izin ditolak."
 
 
 def test_oi_error_to_envelope_with_locale():
     err = OiError(ErrorCode.AGENT_NAME_TAKEN, "agent name 'x' already in use")
-    envelope = err.to_envelope(locale="zh")
+    envelope = err.to_envelope(locale="id")
     assert envelope["error"]["code"] == "AGENT_NAME_TAKEN"
-    assert envelope["error"]["message"] == "该名称已被使用，请换一个名称。"
+    assert envelope["error"]["message"] == "Nama ini sudah dipakai. Silakan pilih yang lain."
 
 
 def test_resolve_request_locale_from_accept_language():
@@ -46,7 +44,7 @@ def test_resolve_request_locale_from_accept_language():
     class _Req:
         headers = _Headers()
 
-    assert resolve_request_locale(_Req()) == "zh"
+    assert resolve_request_locale(_Req()) == "id"  # zh-CN: zh locale removed -> id
 
 
 def test_dashboard_api_errors_match_backend():
@@ -64,7 +62,7 @@ _DASHBOARD_SINGLE_BRACE = re.compile(r"(?<!\{)\{([a-zA-Z_][a-zA-Z0-9_]*)\}(?!\})
 
 def test_dashboard_api_errors_use_i18next_placeholders():
     repo = Path(__file__).resolve().parents[3]
-    for locale in ("en", "zh"):
+    for locale in ("en", "id"):
         data = json.loads(
             (repo / f"dashboard/src/locales/{locale}.json").read_text(encoding="utf-8")
         )

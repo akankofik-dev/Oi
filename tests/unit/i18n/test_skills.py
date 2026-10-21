@@ -8,16 +8,10 @@ from pathlib import Path
 from oi.i18n import all_skill_labels, skill_display_name
 
 
-def test_skill_display_name_known_zh():
-    assert skill_display_name("pdf", "zh") == "PDF 处理"
 
 
-def test_skill_display_name_oi_assistant_slug_zh():
-    assert skill_display_name("oi-assistant", "zh") == "Oi 助手"
 
 
-def test_skill_display_name_oi_assistant_name_zh():
-    assert skill_display_name("oi_assistant", "zh") == "Oi 助手"
 
 
 def test_skill_display_name_unknown_passthrough():
