@@ -25,14 +25,15 @@ Oi 内置一组 OAuth / MCP 连接器。控制台展示的名称、描述、授�
 
 ## Catalog / 目录
 
-The table below must match `catalog.json` (kind, English name, Chinese name,
+The table below must match `catalog.json` (kind, English name, Indonesian name,
 category, auth, MCP mode, and order). Do not edit the rows by hand unless you
 are updating `catalog.json` in the same change.
 
-下表必须与 `catalog.json` 一致（`kind`、英文名、中文名、分类、鉴权、MCP 模式、顺序）。
-改连接器时先改 JSON，再改此表。
+Tabel di bawah harus cocok dengan `catalog.json` (kind, nama Inggris, nama
+Indonesia, kategori, auth, mode MCP, dan urutan). Saat mengubah konektor,
+ubah JSON-nya dulu, baru tabel ini.
 
-| Kind | Name | 名称 | Category | Auth | MCP mode |
+| Kind | Name | Nama | Category | Auth | MCP mode |
 |------|------|------|----------|------|----------|
 | `tencent-docs` | Tencent Docs | 腾讯文档 | office | personal_token | remote |
 | `tencent-ima` | Tencent IMA | 腾讯 IMA | knowledge | api_key | gateway |
@@ -59,7 +60,7 @@ are updating `catalog.json` in the same change.
 | `wecom-cli` | WeCom CLI | 企业微信 CLI | office | api_key | gateway |
 | `agently-cli` | Agent Mail | Agent Mail | office | custom_fields | gateway |
 | `obsidian-cli` | Obsidian | Obsidian | knowledge | custom_fields | gateway |
-| `yuque-mcp` | Yuque (official MCP) | 语雀（官方 MCP） | knowledge | personal_token | stdio |
+| `yuque-mcp` | Yuque (official MCP) | Yuque (MCP resmi) | knowledge | personal_token | stdio |
 | `weknora` | WeKnora | WeKnora | knowledge | custom_fields | gateway |
 | `dify` | Dify | Dify | self_hosted | custom_fields | remote |
 

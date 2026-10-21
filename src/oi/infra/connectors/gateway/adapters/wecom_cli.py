@@ -169,7 +169,9 @@ def _humanize_cli_error(message: str) -> str:
     if text in {_MISSING_CLI_MSG, _BAD_CREDS_MSG}:
         return text
     lower = text.lower()
-    if "Perintah tidak ditemukan" in text or "command not found" in lower or "tidak ada di path" in lower:
+    # Pattern strings below match the WeCom CLI's own (Chinese) error output;
+    # they are matchers, not UI copy — the guidance returned stays Indonesian.
+    if "未找到命令" in text or "command not found" in lower or "不在 path" in lower:
         return _MISSING_CLI_MSG
 
     # Unknown method / clap usage — not a credential problem.
@@ -177,19 +179,19 @@ def _humanize_cli_error(message: str) -> str:
         return _sanitize_unknown_method_error(text)
 
     authish = (
-        "Jalankan dulu" in text
-        or "mcp tidak ditemukan" in lower
+        "请先运行" in text
+        or "未找到 mcp" in lower
         or "get_mcp_config" in lower
-        or "Verifikasi kredensial gagal" in text
-        or ("bot_id" in lower and ("invalid" in lower or "required" in lower or "gagal" in text))
-        or ("bot_secret" in lower and ("invalid" in lower or "required" in lower or "gagal" in text))
+        or "凭证校验失败" in text
+        or ("bot_id" in lower and ("invalid" in lower or "required" in lower or "失败" in text))
+        or ("bot_secret" in lower and ("invalid" in lower or "required" in lower or "失败" in text))
     )
     if authish:
         return _BAD_CREDS_MSG
 
     # Strip CLI binary names so agents don't try shell installs; keep business text.
     cleaned = _strip_cli_binary_mentions(text)
-    if "mcp" in cleaned.lower() and ("kosong" in cleaned or "belum" in cleaned) and "Dilarang" not in cleaned:
+    if "mcp" in cleaned.lower() and ("空" in cleaned or "未" in cleaned) and "Dilarang" not in cleaned:
         return f"{cleaned} Dilarang menyarankan atau menjalankan perintah terminal apa pun."
     return cleaned
 

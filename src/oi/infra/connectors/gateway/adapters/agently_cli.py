@@ -439,5 +439,11 @@ def call_tool(creds: dict[str, Any], name: str, args: dict[str, Any]) -> str:
     # Keep the raw response (including security warnings and confirmation summaries)
     # inside an explicitly untrusted data envelope.
     return json.dumps(
-        {"notice": tr("connector.agently.untrusted"), "result": payload}, ensure_ascii=False
+        {
+            "notice": tr(
+                "connector.agently.untrusted", str(creds.get("_locale") or "en")
+            ),
+            "result": payload,
+        },
+        ensure_ascii=False,
     )

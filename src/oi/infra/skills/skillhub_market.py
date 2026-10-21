@@ -125,6 +125,10 @@ def _http_request(
     except SkillHubPackageError:
         raise
     except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise SkillHubSkillNotFound(
+                f"SkillHub skill package not found: HTTP {exc.code}"
+            ) from exc
         raise SkillHubMarketError(f"SkillHub request failed: HTTP {exc.code}") from exc
     except urllib.error.URLError as exc:
         if isinstance(exc.reason, TimeoutError):

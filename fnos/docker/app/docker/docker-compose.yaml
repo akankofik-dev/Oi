@@ -1,6 +1,6 @@
 services:
   oi:
-    image: ghcr.io/akankofik-dev/oi:1.0.2b9
+    image: ghcr.io/akankofik-dev/oi:1.0.6
     container_name: oi
     restart: unless-stopped
     ulimits:

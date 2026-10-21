@@ -58,6 +58,13 @@ _SPECS: dict[str, CliInstallSpec] = {
         doc_url="https://github.com/WecomTeam/wecom-cli",
         guide_url="https://open.work.weixin.qq.com/help2/pc/21676",
     ),
+    "obsidian-cli": CliInstallSpec(
+        kind="obsidian-cli",
+        binary="obsidian",
+        npm_package=None,
+        doc_url="https://obsidian.md/cli",
+        guide_url="https://obsidian.md/zh/cli",
+    ),
 }
 
 
@@ -135,18 +142,25 @@ def _prepend_path(bin_dir: str) -> None:
 
 
 def ensure_cli_path() -> str:
-    """Prepend the user-level npm global bin dir to the in-process PATH.
+    """Prepend user-level bin dirs to the in-process PATH.
 
     Oi 在 fnOS 上常以非 root 用户运行，``/usr/local`` 下的 npm 全局目录
-    不可写，安装会降级到用户级目录（~/.npm-global）。这里确保该 bin 目录
-    进入进程 PATH，使 ``shutil.which`` 与后续 CLI 子进程调用都能找到命令。
-    目录不存在时不做任何修改，返回 bin 目录（可能为空串）。
+    不可写，安装会降级到用户级目录（~/.npm-global）。Obsidian CLI 在系统
+    bin 不可写时同样落到 ``~/.local/bin``。这里确保这些目录进入进程 PATH，
+    使 ``shutil.which`` 与后续 CLI 子进程调用都能找到命令。
+    目录不存在时不做任何修改，返回 npm 用户级 bin 目录（可能为空串）。
     """
+    local_bin = os.path.join(os.path.expanduser("~"), ".local", "bin")
+    _prepend_path(local_bin)
+    if os.name == "nt":
+        # ``Obsidian.com`` only works beside ``Obsidian.exe``. Register that directory
+        # instead of copying the redirector away from the app.
+        for candidate in obsidian_bundle_candidates():
+            if candidate.lower().endswith(".com") and os.path.isfile(candidate):
+                _prepend_path(os.path.dirname(candidate))
+                break
     _, bin_dir = _user_npm_prefix()
-    if bin_dir and os.path.isdir(bin_dir):
-        current = os.environ.get("PATH", "")
-        if bin_dir not in [part for part in current.split(os.pathsep) if part]:
-            os.environ["PATH"] = bin_dir + os.pathsep + current
+    _prepend_path(bin_dir)
     return bin_dir
 
 
@@ -314,13 +328,16 @@ def cli_install_status(kind: str) -> dict[str, Any]:
     spec = get_cli_install_spec(kind)
     if spec is None:
         raise ValueError(f"kind {kind!r} does not support CLI install")
-    path = shutil.which(spec.binary)
+    path = _locate_binary(spec)
     version = _read_version(path) if path else None
+    install_command = spec.install_command
+    if spec.kind == "obsidian-cli":
+        install_command = obsidian_install_command()
     return {
         "kind": kind,
         "binary": spec.binary,
-        "npm_package": spec.npm_package,
-        "install_command": spec.install_command,
+        "npm_package": spec.npm_package or "",
+        "install_command": install_command,
         "doc_url": spec.doc_url,
         "guide_url": spec.guide_url,
         "installed": bool(path),
@@ -362,6 +379,9 @@ def _install_obsidian_cli(status: dict[str, Any]) -> dict[str, Any]:
 def install_connector_cli(kind: str) -> dict[str, Any]:
     """Ensure the host CLI is installed. Never raises for install failure — returns ok=False."""
     status = cli_install_status(kind)
+    spec = get_cli_install_spec(kind)
+    if spec is not None and spec.kind == "obsidian-cli":
+        return _install_obsidian_cli(status)
     if status["installed"]:
         return {
             "ok": True,
