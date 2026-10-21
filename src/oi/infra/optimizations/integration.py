@@ -75,6 +75,27 @@ class OptimizationManager:
             self._stream_pipeline = StreamPipeline()
         return self._stream_pipeline
 
+    def fast_lane_decision(self, text: str, *, thread_used_tools: bool) -> Any | None:
+        """Suggest-mode fast-lane decision for one turn (never applied here).
+
+        Returns ``None`` unless the ``fast_lane`` flag is ON and a fast
+        model ref is configured via ``fast_lane_model``. Callers log the
+        decision; applying it (actually serving the turn from the fast
+        model) is a separate, later step.
+        """
+        if not bool(getattr(self.flags, "fast_lane", False)):
+            return None
+        fast_ref = str(getattr(self.flags, "fast_lane_model", "") or "").strip()
+        if not fast_ref:
+            return None
+        from oi.infra.optimizations.fast_lane import decide_fast_lane
+
+        return decide_fast_lane(
+            text,
+            thread_used_tools=thread_used_tools,
+            fast_model_ref=fast_ref,
+        )
+
     @property
     def auto_router(self) -> SmartAutoRouter:
         if self._auto_router is None:
@@ -117,6 +138,7 @@ class OptimizationManager:
             "zero_copy_stream",
             "mmap_history",
             "provider_prewarm",
+            "fast_lane",
         ):
             if getattr(self.flags, name, False):
                 return True

@@ -162,6 +162,8 @@ class ChatOptimizations:
     mmap_history: bool = False
     provider_prewarm: bool = False
     auto_router_mode: str = "suggest"
+    fast_lane: bool = False
+    fast_lane_model: str = ""
 
 
 _CHAT_FLAG_FIELDS = (
@@ -173,6 +175,7 @@ _CHAT_FLAG_FIELDS = (
     "zero_copy_stream",
     "mmap_history",
     "provider_prewarm",
+    "fast_lane",
 )
 
 
@@ -191,6 +194,7 @@ def _parse_chat_section(raw: object) -> ChatOptimizations:
             f"config.chat.auto_router_mode must be off/suggest/auto, got {mode!r}"
         )
     flags["auto_router_mode"] = mode
+    flags["fast_lane_model"] = str(raw.get("fast_lane_model", defaults.fast_lane_model)).strip()
     return ChatOptimizations(**flags)
 
 

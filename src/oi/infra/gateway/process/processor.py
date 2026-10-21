@@ -298,12 +298,33 @@ class GlobalProcessor:
                             candidates.append(str(rid))
                 except Exception:
                     logger.exception("auto_router: list_by_user failed; current agent only")
+            had_prior_turn = bool(router.context_store.get(session_key))
             decision = router.route(
                 msg.text or "",
                 thread_id=session_key,
                 current_agent_id=agent_id,
                 candidates=candidates,
             )
+            # fast_lane (suggest): log-only, never switches the model.
+            # Eligibility is conservative: only a thread with no prior
+            # turn is provably tool-free, so ongoing threads are passed
+            # as tool-used until the trajectory layer exposes a real
+            # used-tools signal.
+            try:
+                fl = manager.fast_lane_decision(
+                    msg.text or "",
+                    thread_used_tools=had_prior_turn,
+                )
+                if fl is not None:
+                    logger.info(
+                        "fast_lane: intent=%s use_fast=%s model=%s reason=%s",
+                        fl.intent.value,
+                        fl.use_fast_model,
+                        fl.model_ref,
+                        fl.reason,
+                    )
+            except Exception:
+                logger.exception("fast_lane: decision failed; ignoring")
             logger.info(
                 "auto_router: intent=%s mode=%s current=%s decision=%s reason=%s",
                 decision.intent.value,
