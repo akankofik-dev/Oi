@@ -281,35 +281,15 @@ class GlobalProcessor:
 
         try:
             manager = get_manager()
-            if manager is None or not getattr(manager.flags, "auto_router", False):
+            if manager is None:
                 return agent_id, agent_row, session_key
             router = manager.auto_router
-            candidates = [agent_id]
-            try:
-                uid = int(user_id) if user_id else 0
-            except (TypeError, ValueError):
-                uid = 0
-            if uid:
-                try:
-                    rows = self._agent_repo.list_by_user(uid, include_disabled=False)
-                    for row in rows:
-                        rid = getattr(row, "id", None)
-                        if rid and str(rid) not in candidates:
-                            candidates.append(str(rid))
-                except Exception:
-                    logger.exception("auto_router: list_by_user failed; current agent only")
             had_prior_turn = bool(router.context_store.get(session_key))
-            decision = router.route(
-                msg.text or "",
-                thread_id=session_key,
-                current_agent_id=agent_id,
-                candidates=candidates,
-            )
             # fast_lane (suggest): log-only, never switches the model.
-            # Eligibility is conservative: only a thread with no prior
-            # turn is provably tool-free, so ongoing threads are passed
-            # as tool-used until the trajectory layer exposes a real
-            # used-tools signal.
+            # Independent of the auto_router flag. Eligibility is
+            # conservative: only a thread with no prior turn is provably
+            # tool-free, so ongoing threads are passed as tool-used until
+            # the trajectory layer exposes a real used-tools signal.
             try:
                 fl = manager.fast_lane_decision(
                     msg.text or "",
@@ -325,6 +305,28 @@ class GlobalProcessor:
                     )
             except Exception:
                 logger.exception("fast_lane: decision failed; ignoring")
+            if not getattr(manager.flags, "auto_router", False):
+                return agent_id, agent_row, session_key
+            candidates = [agent_id]
+            try:
+                uid = int(user_id) if user_id else 0
+            except (TypeError, ValueError):
+                uid = 0
+            if uid:
+                try:
+                    rows = self._agent_repo.list_by_user(uid, include_disabled=False)
+                    for row in rows:
+                        rid = getattr(row, "id", None)
+                        if rid and str(rid) not in candidates:
+                            candidates.append(str(rid))
+                except Exception:
+                    logger.exception("auto_router: list_by_user failed; current agent only")
+            decision = router.route(
+                msg.text or "",
+                thread_id=session_key,
+                current_agent_id=agent_id,
+                candidates=candidates,
+            )
             logger.info(
                 "auto_router: intent=%s mode=%s current=%s decision=%s reason=%s",
                 decision.intent.value,
