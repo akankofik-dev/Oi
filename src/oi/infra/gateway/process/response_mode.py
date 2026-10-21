@@ -16,6 +16,15 @@ from oi_gateway.models import (
 
 from oi.infra.utils.llm_text import strip_thinking
 
+try:
+    from oi_gateway.utils import close_event_stream
+except ImportError:  # oi-gateway builds without the helper: close via aclose()
+    async def close_event_stream(events: Any) -> None:
+        aclose = getattr(events, "aclose", None)
+        if aclose is not None:
+            await aclose()
+
+
 ChannelResponseMode = Literal["invoke", "stream"]
 
 DEFAULT_CHANNEL_RESPONSE_MODE: ChannelResponseMode = "invoke"
@@ -113,6 +122,63 @@ async def collapse_to_invoke_response(
 
         # Preserve future terminal/control events instead of silently losing them.
         yield event
+
+
+_WEIXIN_PREAMBLE_TYPES = frozenset(
+    {
+        MessageEventType.DELTA,
+        MessageEventType.FLUSH,
+        MessageEventType.THINKING,
+        MessageEventType.THINKING_DELTA,
+    }
+)
+
+
+def _weixin_tool_key(event: MessageEvent) -> str:
+    meta = event.metadata if isinstance(event.metadata, dict) else {}
+    return str(meta.get("tool_key") or meta.get("tool_name") or "")
+
+
+def _drops_weixin_preamble(event: MessageEvent) -> bool:
+    """Tool calls other than ``ask_agent`` discard the text that led into them."""
+    return event.type == MessageEventType.TOOL_START and _weixin_tool_key(event) != "ask_agent"
+
+
+async def withhold_weixin_stream_preamble(
+    events: AsyncIterator[MessageEvent],
+) -> AsyncIterator[MessageEvent]:
+    """Drop text that is only the lead-in to a tool call.
+
+    Used for WeChat team hosts, which stay on stream mode. Other channels are
+    unchanged. ``ask_agent`` narration is kept so a team host can still say who
+    it is calling. Media and the final answer pass through in their own order.
+    """
+    held: list[MessageEvent] = []
+    try:
+        async for event in events:
+            if event.type in _WEIXIN_PREAMBLE_TYPES:
+                held.append(event)
+                continue
+            if not _drops_weixin_preamble(event):
+                for item in held:
+                    yield item
+            held.clear()
+            yield event
+            if event.type == MessageEventType.ERROR:
+                return
+        for item in held:
+            yield item
+    finally:
+        await close_event_stream(events)
+
+
+def wrap_weixin_stream_processor(processor: MessageProcessor) -> MessageProcessor:
+    """Hide tool lead-in text before a WeChat stream processor emits it."""
+
+    def _wrapped(message: InboundMessage) -> AsyncIterator[MessageEvent]:
+        return withhold_weixin_stream_preamble(processor(message))
+
+    return _wrapped
 
 
 def processor_for_response_mode(

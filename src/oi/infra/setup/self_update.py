@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from oi.infra.errors import ErrorCode, OiError
 from oi.infra.utils.paths import PathLayout
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ def _github_release_exists(version: str, timeout: int = 10) -> bool:
 _GREEN_PACKAGES_ENV = "OI_GREEN_PACKAGES"
 _STASH_SUFFIX = ".oi-old"
 _PROBE_TIMEOUT_S = 8
+_PROBE_PREFIX = "__OI_PROBE__"
 _INSTALL_TIMEOUT_S = 90
 _FPK_INSTALL_TIMEOUT_S = 900
 
@@ -128,8 +130,11 @@ def get_local_version() -> str:
     try:
         from importlib.metadata import version
 
-        # Package lokal namanya "oi" (bukan "oi-agent")
-        return version("oi")
+        target = green_packages_dir()
+        fpk_target = os.environ.get("OI_FPK_SITE_PACKAGES", "").strip()
+        if target is not None or fpk_target:
+            return get_version_in_dir(sys.executable, str(target or fpk_target)) or "0.0.0"
+        return version(_PACKAGE_NAME)
     except Exception:
         return "0.0.0"
 
@@ -309,6 +314,16 @@ def is_prerelease(value: str) -> bool:
 
 def is_newer(remote: str, local: str) -> bool:
     return parse_version(remote) > parse_version(local)
+
+
+def validate_upgrade_target(version: str | None, local_ver: str) -> None:
+    """Reject reinstalls/downgrades before any installer changes the environment."""
+    if version is not None and not is_newer(version, local_ver):
+        raise OiError(
+            ErrorCode.UPDATE_TARGET_NOT_NEWER,
+            f"Versi target {version} tidak lebih baru dari versi saat ini {local_ver}.",
+            details={"target": version, "current": local_ver},
+        )
 
 
 def get_editable_path() -> str | None:
@@ -500,21 +515,43 @@ def get_installed_version(python_exe: str) -> str | None:
     return None
 
 
-def get_version_in_dir(python_exe: str, target: str) -> str | None:
-    """Return the oi version installed in *target* (a ``pip --target`` dir)."""
+def get_version_in_dir(python_exe: str, target: str, *, check_cli: bool = False) -> str | None:
+    """Read the loaded target version, optionally exercising its CLI entry point."""
     try:
         code = (
-            "import sys; sys.path.insert(0, sys.argv[1]); "
-            "from importlib.metadata import version; print(version('oi'))"
+            "import json, site, sys; from pathlib import Path; "
+            "target = Path(sys.argv[1]).resolve(); "
+            "sys.path.insert(0, str(target)); site.addsitedir(str(target)); "
+            "import oi; "
+            "actual = oi.__version__ if "
+            "Path(oi.__file__).resolve().is_relative_to(target) else None\n"
+            "if actual is not None and sys.argv[2] == '1':\n"
+            " import contextlib, io, runpy\n"
+            " sys.argv = ['oi', '--version']\n"
+            " with contextlib.redirect_stdout(io.StringIO()):\n"
+            "  try:\n"
+            "   runpy.run_module('oi', run_name='__main__', alter_sys=True)\n"
+            "  except SystemExit as exc:\n"
+            "   if exc.code not in (None, 0): raise\n"
+            f"print('\\n{_PROBE_PREFIX}' + json.dumps(actual))"
         )
         result = subprocess.run(
-            [python_exe, "-c", code, target],
+            [python_exe, "-B", "-c", code, target, "1" if check_cli else "0"],
             capture_output=True,
             text=True,
             check=False,
+            timeout=_PROBE_TIMEOUT_S,
         )
         if result.returncode == 0:
-            return result.stdout.strip() or None
+            payloads = [
+                line.removeprefix(_PROBE_PREFIX)
+                for line in result.stdout.splitlines()
+                if line.startswith(_PROBE_PREFIX)
+            ]
+            if len(payloads) != 1:
+                return None
+            loaded_version = json.loads(payloads[0])
+            return loaded_version if isinstance(loaded_version, str) and loaded_version else None
     except Exception:
         pass
     return None
@@ -666,6 +703,10 @@ def run_upgrade(
     allow_prerelease: bool = False,
     version: str | None = None,
 ) -> UpgradeResult:
+    try:
+        validate_upgrade_target(version, get_local_version())
+    except OiError as exc:
+        return UpgradeResult(success=False, error=str(exc))
     # [FPK] FnOS FPK 部署：launcher 通过 PYTHONPATH 从应用中心托管的打包
     # site-packages 加载 oi，在线安装到系统 Python 永远不会被加载（重启
     # 无效）。launcher 导出 OI_FPK_SITE_PACKAGES 指向该打包目录，升级即

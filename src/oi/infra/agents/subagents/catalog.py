@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from oi.infra.utils.frontmatter import is_agent_file, parse_frontmatter
-from oi.infra.utils.locale import DEFAULT_LOCALE, SUPPORTED_LOCALES, Locale, normalize_locale
+from oi.infra.utils.locale import DEFAULT_LOCALE, SUPPORTED_LOCALES, Locale
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,14 @@ class SubagentDefinition:
 
 
 def _norm(locale: Locale | str | None) -> Locale:
-    return normalize_locale(locale) if locale is not None else FALLBACK_LOCALE
+    # The catalog treats library locales as *content* locales: any locale
+    # directory that ships in the library (en, zh, id, ...) is addressable,
+    # independent of the UI locale set. Only case/region is normalized here;
+    # unknown locales simply miss their lookups instead of being remapped.
+    if locale is None:
+        return FALLBACK_LOCALE
+    raw = str(locale).strip().lower().split("-")[0]
+    return cast("Locale", raw) if raw else FALLBACK_LOCALE
 
 
 def slugify(name: str) -> str:
@@ -194,7 +201,18 @@ class SubagentCatalog:
         per_locale_divisions: dict[Locale, dict[str, DivisionMeta]] = {}
         locales_present: list[Locale] = []
 
-        for locale in SUPPORTED_LOCALES:
+        # Discover content locales from the library itself: every directory
+        # carrying a divisions.json is scanned, whether or not it is a UI
+        # locale. UI-supported locales keep priority, then the rest follow
+        # alphabetically.
+        discovered = {
+            child.name
+            for child in self._library_root.iterdir()
+            if child.is_dir() and (child / "divisions.json").exists()
+        }
+        ordered_locales = [loc for loc in SUPPORTED_LOCALES if loc in discovered]
+        ordered_locales += sorted(discovered.difference(SUPPORTED_LOCALES))
+        for locale in cast("list[Locale]", ordered_locales):
             locale_root = self._library_root / locale
             if not locale_root.is_dir():
                 continue

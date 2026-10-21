@@ -33,6 +33,7 @@ from oi.infra.setup.self_update import (
     is_prerelease,
     parse_changelog_for_version,
     run_upgrade,
+    validate_upgrade_target,
 )
 from oi.infra.setup.service import (
     ServiceRuntime,
@@ -333,6 +334,7 @@ async def trigger_upgrade(
         latest_stable=info.latest_stable if info else None,
         stable_only=stable_only,
     )
+    validate_upgrade_target(target, get_local_version())
     allow_prerelease = bool(target and is_prerelease(target))
     task = await create_task()
     asyncio.create_task(

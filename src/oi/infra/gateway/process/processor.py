@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import dataclass
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Literal
@@ -133,6 +134,12 @@ class _MessageEventSink(SlashSink):
         pass
 
 
+@dataclass(frozen=True)
+class _ResolvedModelRoute:
+    model_ref: str | None
+    automatic: bool
+
+
 class GlobalProcessor:
     """Routes InboundMessages by ``tenant_id`` to the correct HarnessAgent."""
 
@@ -184,6 +191,7 @@ class GlobalProcessor:
             user_repo=user_repo,
             thread_message_repo=thread_message_repo,
             gateway=gateway,
+            hitl_coordinator=self._hitl,
         )
 
     async def _begin_history(
@@ -627,6 +635,23 @@ class GlobalProcessor:
         needs_multimodal: bool,
         user_id: int = 0,
     ) -> str | None:
+        return self._resolve_harness_model_route(
+            agent_id,
+            thread_id,
+            meta,
+            needs_multimodal=needs_multimodal,
+            user_id=user_id,
+        ).model_ref
+
+    def _resolve_harness_model_route(
+        self,
+        agent_id: str,
+        thread_id: str,
+        meta: dict[str, Any] | None,
+        *,
+        needs_multimodal: bool,
+        user_id: int = 0,
+    ) -> _ResolvedModelRoute:
         """Per-turn ``model`` for harness requests.
 
         - Expert AUTO (no ``default_model`` on row): omit ``model`` → harness routes.
@@ -643,6 +668,7 @@ class GlobalProcessor:
             meta,
             thread_row.model_ref if thread_row is not None else None,
         )
+        automatic = False
         if model_ref and not providers.is_model_ref_usable(model_ref):
             model_ref = None
         if not model_ref:
@@ -657,17 +683,22 @@ class GlobalProcessor:
             preferred = get_preferred_model_from_json(
                 user_row.preferences_json if user_row is not None else None
             )
-            if preferred and self._agent_manager.providers.is_model_ref_usable(preferred):
+            if preferred and self._agent_manager.is_auto_route_model_available(preferred):
                 model_ref = preferred
+                automatic = True
         if not model_ref:
             fallback = self._agent_manager.resolve_fallback_model_ref()
             model_ref = fallback.strip() if isinstance(fallback, str) and fallback.strip() else None
+            automatic = model_ref is not None
         if not model_ref:
-            return None
-        return providers.resolve_model_for_multimodal_turn(
+            return _ResolvedModelRoute(None, automatic=True)
+        resolved = providers.resolve_model_for_multimodal_turn(
             model_ref,
             needs_multimodal=needs_multimodal,
         )
+        if resolved != model_ref:
+            automatic = True
+        return _ResolvedModelRoute(resolved, automatic=automatic)
 
     def _resolve_reasoning_overrides(
         self,
@@ -765,6 +796,7 @@ class GlobalProcessor:
                 outcome=slash_outcome,
                 history_factory=self._begin_history,
                 history_finalize=self._complete_resumed_history,
+                member_hitl=self.teams.deliver_member_hitl,
             ):
                 yield ev
             if slash_outcome.completed_turn:
@@ -813,6 +845,7 @@ class GlobalProcessor:
                         usage_tracker=usage_tracker,
                         history_tracker=history_tracker,
                         outcome=answer_outcome,
+                        member_hitl=self.teams.deliver_member_hitl,
                     ):
                         yield ev
                 finally:
@@ -1096,6 +1129,7 @@ class GlobalProcessor:
                 outcome=slash_outcome,
                 history_factory=self._begin_history,
                 history_finalize=self._complete_resumed_history,
+                member_hitl=self.teams.deliver_member_hitl,
             ):
                 for frame in message_event_to_cli_chunks(ev):
                     yield _maybe_stamp_team_host(frame, agent_id, team_host)
@@ -1146,6 +1180,7 @@ class GlobalProcessor:
                         usage_tracker=usage_tracker,
                         history_tracker=history_tracker,
                         outcome=answer_outcome,
+                        member_hitl=self.teams.deliver_member_hitl,
                     ):
                         for frame in message_event_to_cli_chunks(ev):
                             yield _maybe_stamp_team_host(frame, agent_id, team_host)
@@ -1212,6 +1247,7 @@ class GlobalProcessor:
                 response_lines=slash_lines,
             )
             self._hitl.expire_pending_for_thread(thread_id, agent_id=agent_id, user_id=user_id)
+            self.teams.cancel_member_hitl(thread_id)
             self._touch_thread_after_turn(thread_id, msg.text)
             for line in slash_lines:
                 yield _maybe_stamp_team_host(
@@ -1240,6 +1276,7 @@ class GlobalProcessor:
             )
 
         self._hitl.expire_pending_for_thread(thread_id, agent_id=agent_id, user_id=user_id)
+        self.teams.cancel_member_hitl(thread_id)
         request = await self._build_dashboard_request(
             msg,
             agent_id=agent_id,

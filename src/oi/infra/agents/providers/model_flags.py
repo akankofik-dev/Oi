@@ -13,6 +13,17 @@ _ONNX_PRESET_NAMES = frozenset({"onnx", "onnx (local)"})
 # Same pattern for Ollama (placeholder api_key + exact preset names).
 _OLLAMA_PRESET_API_KEY = "ollama"
 _OLLAMA_PRESET_NAMES = frozenset({"ollama", "ollama (local)"})
+
+
+_EMBEDDING_NAME_HINTS = (
+    "embed",  # text-embedding-3-small, qwen*-embedding, bce-embedding, nomic-embed-text
+    "bge-",  # BAAI general embedding series (bge-m3 has no "embed" substring)
+    "e5-",  # e5-large-v2 family
+    "gte-",  # gte-large family
+)
+
+
+_RERANK_NAME_HINTS = ("rerank",)
 # Well-known local hostnames (including the docker service name ``ollama``) and
 # suffixes that never point at a public Ollama cloud endpoint.
 _LOCAL_OLLAMA_HOSTNAMES = frozenset(
@@ -108,6 +119,21 @@ def is_local_runtime_provider(
     )
 
 
+def is_rerank_model(model: dict[str, Any]) -> bool:
+    """True when *model* is a reranker (query/document relevance scoring).
+
+    Rerankers are a sibling capability, not embeddings: they answer ``/rerank``
+    with relevance results instead of ``/embeddings`` with vectors, so they can
+    neither serve as a knowledge-base embedding backend nor appear in chat
+    pickers. Matched before the embedding name hints — the ``bge-`` family
+    spans both (``bge-m3`` embeds, ``bge-reranker-*`` reranks).
+    """
+    if str(model.get("task") or "").strip().lower() == "rerank":
+        return True
+    model_id = str(model.get("id") or "").strip().lower()
+    return any(hint in model_id for hint in _RERANK_NAME_HINTS)
+
+
 def is_embedding_model(
     model: dict[str, Any],
     *,
@@ -120,6 +146,16 @@ def is_embedding_model(
     - ``embedding: true``
     - ``task: "embedding"``
 
+    Rerankers are excluded even when their family prefix matches an embedding
+    hint (``bge-reranker-*``): they cannot serve as an embedding backend
+    (see :func:`is_rerank_model`).
+
+    Name-convention fallback: many upstream model catalogs (DashScope,
+    SiliconFlow, Ollama, vLLM listings, ...) ship embedding entries without an
+    explicit flag, so mirror ``is_vision_model`` and recognise the common
+    naming conventions too. This keeps embedding-only entries out of chat
+    pickers and lets ``embedding-options`` surface remote providers (#1929).
+
     Legacy fallback: models under the ONNX local provider are treated as
     embedding-only even if the flag was missing.
     """
@@ -127,6 +163,11 @@ def is_embedding_model(
         return True
     task = str(model.get("task") or "").strip().lower()
     if task == "embedding":
+        return True
+    if is_rerank_model(model):
+        return False
+    model_id = str(model.get("id") or "").strip().lower()
+    if model_id and any(hint in model_id for hint in _EMBEDDING_NAME_HINTS):
         return True
     return is_onnx_local_provider(provider_name, provider_api_key=provider_api_key)
 
@@ -163,5 +204,7 @@ def is_chat_eligible_model(
     if not model.get("enabled", True):
         return False
     if is_embedding_model(model, provider_name=provider_name, provider_api_key=provider_api_key):
+        return False
+    if is_rerank_model(model):
         return False
     return bool(str(model.get("id") or "").strip())

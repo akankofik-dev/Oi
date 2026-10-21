@@ -99,7 +99,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _model_retry_on_failure(exc: Exception) -> str:
+def _model_retry_on_failure(
+    exc: Exception,
+    *,
+    agent_id: str = "",
+    manager: AgentManager | None = None,
+) -> str:
     # Fail-fast errors (circuit breaker open, failover exhausted, timeout)
     # harus langsung ke user, jangan diubah jadi retry prompt yang membingungkan.
     from oi.infra.agents.middleware.llm_resilience import (
@@ -114,9 +119,36 @@ def _model_retry_on_failure(exc: Exception) -> str:
         raise exc
 
     # Feed a specific, model-visible prompt instead of raising. Inbox jobs still
-    # mark failed when the reply carries MODEL_RETRY_FAILURE_MARK.
-    from oi.i18n.domains.stream import model_retry_failure_prompt
+    # mark failed when the reply carries MODEL_RETRY_FAILURE_MARK. The failure
+    # is also written to the server log (with agent/thread/model context) so
+    # operators can find the real cause behind the generic prompt.
+    from contextlib import suppress
 
+    from oi.i18n.domains.stream import exception_display_message, model_retry_failure_prompt
+    from oi.infra.agents.security.hitl_session import current_hitl_thread_id
+    from oi.infra.metrics import METRICS
+    from oi.infra.utils.turn_failure import current_turn_model, log_turn_failure
+
+    thread_id = current_hitl_thread_id() or ""
+    model = current_turn_model()
+    if not model and manager is not None and agent_id and thread_id:
+        with suppress(Exception):
+            model = manager.get_thread_model(agent_id, thread_id) or ""
+    if not model and manager is not None and agent_id:
+        with suppress(Exception):
+            row = manager.get_row(agent_id)
+            if row is not None:
+                model = (row.default_model or "").strip()
+    log_turn_failure(
+        "model_retry",
+        detail=exception_display_message(exc),
+        agent_id=agent_id,
+        thread_id=thread_id,
+        model=model,
+        exc=exc,
+        level=logging.ERROR,
+    )
+    METRICS.inc("stream_errors_total")
     return model_retry_failure_prompt(exc, "en")
 
 
@@ -1228,36 +1260,140 @@ class AgentManager:
             return OiError(ErrorCode.AGENT_FAILED, f"agent {agent_id!r} failed to start")
         return OiError(ErrorCode.AGENT_NOT_RUNNING, f"agent {agent_id!r} not running")
 
-    async def delete_thread_checkpoint(self, agent_id: str, thread_id: str) -> bool:
-        """Best-effort delete of a thread's actual conversation data.
+    async def delete_thread_checkpoint(self, agent_id: str, thread_id: str) -> None:
+        """Delete a thread's conversation data from the checkpoint store.
 
-        Oi's own ``thread_registry`` only tracks UI metadata (title,
-        pinned, last_active) — the real message content lives in the
-        agent's LangGraph checkpointer. Deleting only the registry row
-        makes "delete conversation" cosmetic: the content stays in the
-        checkpoint store forever. Callers should call this *before*
-        removing their own thread row, so a checkpoint-delete failure
-        leaves the thread visible/retryable instead of orphaning data
-        with no remaining handle to it.
-
-        Returns ``True`` when checkpoint data was actually deleted,
-        ``False`` when there was nothing to delete (agent not currently
-        running, or no checkpointer configured for it) — both are normal,
-        expected states, not errors.
+        Uses the live harness checkpointer when the agent is loaded.
+        Otherwise opens the configured SQLite or Postgres memory store
+        directly, so a restart does not skip the delete. Raises
+        ``CHECKPOINT_DELETE_FAILED`` when persisted data could not be
+        removed. Returns normally when the store has nothing for this
+        thread. Callers should invoke this *before* removing their own
+        thread row, so a failure leaves the thread visible and retryable.
         """
+        row = self.get_row(agent_id)
+        harness = None
         try:
             harness = self.get_agent(agent_id)
+        except OiError as exc:
+            if exc.code == ErrorCode.AGENT_NOT_FOUND or row is None:
+                raise
+            harness = None
+        live_error: Exception | None = None
+        if harness is not None:
+            adelete = getattr(harness, "adelete_thread", None)
+            if adelete is not None:
+                try:
+                    await adelete(thread_id)
+                except OiError:
+                    raise
+                except Exception as exc:
+                    live_error = exc
+        if row is None:
+            if live_error is not None:
+                raise OiError(
+                    ErrorCode.CHECKPOINT_DELETE_FAILED,
+                    f"could not delete conversation data for thread {thread_id!r}",
+                ) from live_error
+            return
+        try:
+            await asyncio.to_thread(self._delete_thread_from_store, agent_id, thread_id, row)
         except OiError:
-            logger.warning(
-                "delete_thread_checkpoint: agent %r not running; skipping checkpoint cleanup for thread %r",
-                agent_id,
-                thread_id,
-            )
-            return False
-        adelete = getattr(harness, "adelete_thread", None)
-        if adelete is None:
-            return False
-        return bool(await adelete(thread_id))
+            if live_error is not None:
+                raise OiError(
+                    ErrorCode.CHECKPOINT_DELETE_FAILED,
+                    f"could not delete conversation data for thread {thread_id!r}",
+                ) from live_error
+            raise
+    def _delete_thread_from_store(self, agent_id: str, thread_id: str, row: Any) -> None:
+        from oi.infra.agents.memory.thread_cleanup import (  # noqa: PLC0415
+            delete_thread_from_agent_stores,
+            workspace_for_agent_row,
+        )
+
+        cfg = self._agent_config_dict(row)
+        workspace = workspace_for_agent_row(row, paths=self._paths)
+        delete_thread_from_agent_stores(
+            agent_id=agent_id,
+            thread_id=thread_id,
+            cfg=cfg,
+            oi_config=self._config,
+            workspace_dir=workspace,
+            paths=self._paths,
+        )
+
+    async def restore_memory_store(
+        self, agent_id: str, memory: Any, operation: Callable[[], dict[str, Any]], *, locale: str
+    ) -> dict[str, Any]:
+        """Drain and recreate only this expert; caller owns its turn reservation."""
+        from oi_harness.memory.store import shared_memory_store
+
+        from oi.i18n import tr
+
+        assert self._harness_manager is not None
+        async with self._lifecycle_lock_for(agent_id):
+            agent = self.get_agent(agent_id)
+            runtime = agent._memory_runtime
+            if runtime.memory is not memory:
+                raise ValueError(tr("memory_storage.restore_changed", locale))
+            key = runtime._memory_key
+            if key is not None and shared_memory_store().refs(key) != 1:
+                raise ValueError(tr("memory_storage.shared_sqlite", locale))
+            mw = runtime._middleware
+            pause_background = getattr(mw, "pause_background", None)
+            if not callable(pause_background):
+                raise ValueError(tr("memory_storage.incompatible", locale))
+            pause = pause_background(timeout=120)
+            draining = asyncio.create_task(asyncio.to_thread(pause.__enter__))
+            try:
+                await asyncio.shield(draining)
+            except asyncio.CancelledError:
+                await draining
+                await asyncio.to_thread(pause.__exit__, None, None, None)
+                raise
+            removed = False
+            try:
+                row = self.get_row(agent_id)
+                if row is None:
+                    raise ValueError(tr("memory_storage.restore_changed", locale))
+                cfg, metadata, tags, user_display = self._agent_runtime_bundle(row)
+                removed = True
+                await self._harness_manager.aremove_agent(agent_id)
+                if runtime.memory is not None or (
+                    key is not None and shared_memory_store().peek(key) is not None
+                ):
+                    raise ValueError(tr("memory_storage.restore_changed", locale))
+                worker = asyncio.create_task(asyncio.to_thread(operation))
+                try:
+                    return await asyncio.shield(worker)
+                except asyncio.CancelledError:
+                    await worker
+                    raise
+            finally:
+                try:
+                    if removed:
+                        try:
+                            assert row is not None
+                            entry = await self._harness_manager.acreate_agent(
+                                cfg,
+                                agent_id=agent_id,
+                                metadata=metadata,
+                                tags=tags,
+                                init_workspace=False,
+                            )
+                            await self._post_start_agent(
+                                row, entry.agent, cfg, user_display=user_display
+                            )
+                            self._repos.agent_repo.set_state(agent_id, "running", error=None)
+                        except Exception as exc:
+                            self._repos.agent_repo.set_state(
+                                agent_id, "failed", error=format_agent_start_error(exc)
+                            )
+                            raise ValueError(
+                                tr("memory_storage.restore_reload_failed", locale)
+                            ) from exc
+                finally:
+                    await asyncio.to_thread(pause.__exit__, None, None, None)
 
     # ------------------------------------------------------------------
     # Chat / invoke — stream, call, HITL, thread model overrides
