@@ -244,7 +244,7 @@ function isAgentScopedPath(path: string): boolean {
 function buildHeaders(path: string, extra?: HeadersInit): HeadersInit {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "Accept-Language": i18n.language?.startsWith("zh") ? "zh" : "en",
+    "Accept-Language": i18n.language?.startsWith("id") ? "id" : "en",
   };
 
   // Apply the global JWT first; the caller's `extra` (including a
@@ -285,7 +285,7 @@ function buildHeaders(path: string, extra?: HeadersInit): HeadersInit {
  */
 function buildAuthHeaders(path: string): Record<string, string> {
   const headers: Record<string, string> = {
-    "Accept-Language": i18n.language?.startsWith("zh") ? "zh" : "en",
+    "Accept-Language": i18n.language?.startsWith("id") ? "id" : "en",
   };
   const token = getAuthToken();
   if (token) {

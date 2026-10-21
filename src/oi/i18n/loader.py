@@ -24,7 +24,7 @@ def _resolve_node(table: dict[str, Any], key: str) -> str | None:
 @lru_cache(maxsize=1)
 def _load_all() -> dict[Locale, dict[str, Any]]:
     out: dict[Locale, dict[str, Any]] = {}
-    for loc in ("en", "id", "zh"):
+    for loc in ("en", "id"):
         raw = resources.files("oi.i18n").joinpath(f"{loc}.json").read_text(encoding="utf-8")
         out[loc] = json.loads(raw)
     return out

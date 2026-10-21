@@ -95,7 +95,8 @@
       "usage": "Penggunaan: /delete <thread_short_id>",
       "not_found": "Tidak ada thread yang cocok dengan {short!r}.",
       "active": "Tidak dapat menghapus thread yang aktif. Gunakan /new terlebih dahulu.",
-      "done": "Thread {short} dihapus."
+      "done": "Thread {short} dihapus.",
+      "failed": "Thread ini tidak dapat dihapus. Thread masih ada di daftar; coba lagi."
     },
     "pin": {
       "done": "Thread disematkan."
@@ -323,7 +324,17 @@
       "failure_hint": "Lihat log server untuk detail; batch tidak akan mencoba ulang otomatis.",
       "trusted_chat": "Gunakan /memory di dashboard Oi yang sudah masuk atau chat CLI lokal. Pengirim IM belum memiliki izin pemeliharaan terverifikasi.",
       "preview": "Pemeliharaan opsional ini merebut kembali ruang disk dengan menduplikasi konteks tersimpan, menjaga riwayat chat dan memori. Penghematan tergantung seberapa banyak data yang terduplikasi.\n\nCadangan membutuhkan ruang disk tambahan. Selama pemeliharaan, pengiriman dijeda di semua chat untuk agen yang terdampak dan dilanjutkan otomatis setelahnya. Database besar bisa memakan waktu lama; tidak ada estimasi durasi yang andal. Jalankan ini saat Anda dapat membiarkan agen menganggur.\n\nTarget yang memenuhi syarat saat ini: {count} (pemeliharaan belum dimulai):",
-      "confirm_hint": "Untuk memulai sekarang, kirim `{command}`. Tanpa konfirmasi, Anda dapat terus mengobrol. Target yang memenuhi syarat diperiksa ulang saat Anda mengonfirmasi."
+      "confirm_hint": "Untuk memulai sekarang, kirim `{command}`. Tanpa konfirmasi, Anda dapat terus mengobrol. Target yang memenuhi syarat diperiksa ulang saat Anda mengonfirmasi.",
+      "orphan_dirs": "Direktori-direktori ini tidak cocok dengan agen mana pun yang ada saat ini. Pemeliharaan membiarkannya tetap di tempat. Untuk menghapusnya, kirim `{command}` sebagai konfirmasi kedua:",
+      "orphan_dirs_none": "Tidak ada direktori tersisa yang namanya tidak cocok dengan agen saat ini.",
+      "compact_preview": "Ini menulis ulang basis data memori agar ruang dari percakapan yang dihapus dapat kembali ke sistem operasi. SQLite dan PostgreSQL sama-sama melaporkan ukuran sebelum, ukuran sesudah, dan berapa yang dihemat. PostgreSQL menjalankan VACUUM FULL pada tabel checkpoint bersama, yang memblokir baca dan tulis untuk setiap agen yang memakai basis data itu.\\n\\nBerhenti mengobrol dengan agen-agen itu dulu. Proses ini bisa lama pada basis data yang besar.",
+      "compact_done_saved": "Basis data memori: {before} -> {after}, hemat {saved}.",
+      "compact_done_unchanged": "Basis data memori tetap {after}. Berkasnya tidak menyusut.",
+      "compact_done_tables": "VACUUM FULL selesai pada {count} tabel.",
+      "compact_skipped": "Dilewati (tabel tidak ada): {tables}.",
+      "compact_busy": "Agen ini sedang dalam percakapan. Tunggu sampai menganggur, lalu jalankan /memory compact --confirm.",
+      "compact_not_running": "Agen ini tidak berjalan, jadi basis data memorinya tidak dapat dipadatkan dari chat.",
+      "compact_no_memory": "Agen ini tidak punya penyimpanan memori untuk dipadatkan."
     }
   },
   "connector": {
@@ -496,7 +507,18 @@
     "TEAM_MEMBER_BUSY": "Expert ini memiliki pekerjaan tim yang sedang berjalan. Tunggu hingga selesai.",
     "TEAM_NOT_SHAREABLE": "Tim tidak dapat dibagikan di versi ini.",
     "SKILL_PACKAGE_COPY_DENIED": "Pembuat paket skill ini menonaktifkan penyalinan skill-nya.",
-    "SKILL_PACKAGE_LOCKED": "Skill ini disalin dari paket skill yang terkunci dan tidak dapat diedit di workspace."
+    "SKILL_PACKAGE_LOCKED": "Skill ini disalin dari paket skill yang terkunci dan tidak dapat diedit di workspace.",
+    "UPDATE_TARGET_NOT_NEWER": "Versi target {target} harus lebih baru dari versi terpasang {current}. Pemasangan ulang atau penurunan versi tidak didukung.",
+    "CHECKPOINT_DELETE_FAILED": "Data percakapan tidak terhapus. Thread masih ada di sini; coba lagi.",
+    "BRIDGE_PEER_ALREADY_LINKED": "Akun peer ini sudah tertaut sebagai \"{name}\". Gunakan koneksi yang ada.",
+    "BRIDGE_CONNECTION_LIMIT": "Maksimal {limit} koneksi kolaborasi cloud per pengguna. Hapus satu untuk menambah yang lain.",
+    "BRIDGE_SELF_CONNECT": "Tidak dapat menambahkan instans Oi ini sebagai peer bagi dirinya sendiri.",
+    "VOICE_REALTIME_UNAVAILABLE": "Pengenalan ucapan realtime tidak tersedia. Periksa pengaturan suara Tencent Cloud.",
+    "KNOWLEDGE_PREREQUISITES_RESTART_REQUIRED": "Komponen embedding basis pengetahuan sudah terpasang tetapi belum dapat dimuat oleh proses ini. Mulai ulang server agar komponen itu berlaku.",
+    "USER_ROLE_ID_INVALID": "ID peran harus 1-64 huruf atau garis bawah, dan tidak boleh diawali atau diakhiri garis bawah.",
+    "USER_ROLE_ID_TAKEN": "ID peran ini sudah digunakan.",
+    "LOCAL_DOWNLOAD_UNAVAILABLE": "Menyimpan ke folder Unduhan host hanya tersedia saat Oi dibuka di komputer ini.",
+    "SKILL_PACKAGE_DOWNLOAD_DENIED": "Pengunduhan paket skill ini dinonaktifkan."
   },
   "desktop": {
     "install_log_deps": "Memasang dependensi Python…",
@@ -613,7 +635,9 @@
     "ask_user_question": "Tanya pengguna",
     "generate_image": "Buat gambar",
     "generate_video": "Buat video",
-    "bilibili_search_anime": "Cari anime Bilibili"
+    "bilibili_search_anime": "Cari anime Bilibili",
+    "memory_save": "Simpan memori",
+    "search_arxiv": "Cari makalah arXiv"
   },
   "skills": {
     "pdf": "PDF",
@@ -683,6 +707,11 @@
       "created": "Dibuat",
       "error": "Kesalahan",
       "unknown": "Tidak diketahui"
+    },
+    "cli": {
+      "active_model_unset": "Belum ada model default global yang diatur. Atur dengan: oi models active --provider <name> --model <model-id> (agen juga dapat mengikat modelnya sendiri).",
+      "model_global": "(global: {model})",
+      "model_unset": "(belum diatur)"
     }
   },
   "agent_errors": {
@@ -702,7 +731,8 @@
     "model_call_failed": "Panggilan model gagal setelah beberapa kali percobaan. Tunggu sebentar lalu coba ulang. Jika terus gagal, periksa pengaturan model atau alihkan model.",
     "model_call_failed_detail": "Panggilan model gagal: {detail}",
     "model_retry_prompt": "Permintaan API model gagal. Jangan berpura-pura tugas berhasil.\n\nYang terjadi: {guidance}\n\nJelaskan hal ini ke pengguna dalam bahasanya dan sarankan langkah berikutnya. Jangan ulangi permintaan gagal yang sama tanpa perubahan.\n\nDetail teknis: {detail}",
-    "path_outside_root": "Path file berada di luar root penyimpanan expert ini, sehingga tidak dapat dibaca atau ditulis. Gunakan path di bawah root penyimpanan, atau perluas root penyimpanan di pengaturan expert (di Windows, atur path drive eksplisit seperti D:/oi-data)."
+    "path_outside_root": "Path file berada di luar root penyimpanan expert ini, sehingga tidak dapat dibaca atau ditulis. Gunakan path di bawah root penyimpanan, atau perluas root penyimpanan di pengaturan expert (di Windows, atur path drive eksplisit seperti D:/oi-data).",
+    "invalid_request": "Model menolak permintaan ini sebagai tidak valid. Endpoint OpenAI-compatible yang ketat (misalnya Huawei MindIE) sering menolak kolom tambahan seperti stream_options. Provider kustom sekarang secara default tidak mengirim usage saat streaming; jika masih gagal, periksa apakah model mendukung tool calling. Error lengkapnya ada di log server."
   },
   "attachment": {
     "header": "[Lampiran] {filename}",
@@ -711,7 +741,8 @@
     "size": "Ukuran: {size} byte",
     "empty_message": "[pesan kosong]",
     "empty_image": "Pengguna mengirim gambar.",
-    "image_unavailable": "[Lampiran] Gambar tidak dapat dimuat untuk model."
+    "image_unavailable": "[Lampiran] Gambar tidak dapat dimuat untuk model.",
+    "extracted_header": "[Teks lampiran: {filename}]"
   },
   "knowledge": {
     "retrieval": {
@@ -814,6 +845,18 @@
       },
       "UnauthorizedOperation": "Akun Tencent Cloud ini tidak diotorisasi untuk API suara ini.",
       "RequestLimitExceeded": "Tencent Cloud membatasi laju permintaan ini. Coba lagi sebentar."
+    },
+    "realtime": {
+      "error_4002": "Autentikasi pengenalan ucapan realtime gagal. Periksa SecretId dan SecretKey.",
+      "error_4003": "Pengenalan ucapan realtime belum diaktifkan untuk akun Tencent Cloud ini.",
+      "error_4004": "Paket sumber daya pengenalan ucapan realtime Tencent Cloud sudah habis.",
+      "error_4005": "Akun Tencent Cloud menunggak pembayaran. Isi saldo lalu coba lagi.",
+      "error_4006": "Batas konkurensi pengenalan ucapan realtime tercapai. Coba lagi sebentar.",
+      "error_4007": "Dekode audio gagal. Periksa masukan mikrofon.",
+      "error_4008": "Pengunggahan audio kehabisan waktu. Periksa koneksi jaringan.",
+      "error_4009": "Koneksi pengenalan ucapan realtime ditutup.",
+      "error_5000": "Layanan Tencent Cloud sedang tidak tersedia sementara. Coba lagi sebentar.",
+      "error_unknown": "Pengenalan ucapan realtime gagal. Coba lagi sebentar."
     }
   },
   "memory_slim": {
@@ -847,7 +890,20 @@
     "backend_unsupported": "Agen ini memakai memori {backend}. Perintah ini hanya memelihara file SQLite dan tidak berlaku untuk database ini. Tidak ada pemeliharaan yang dimulai.",
     "memory_disabled": "Agen ini tidak mengaktifkan memori, sehingga tidak ada database untuk dipelihara. Tidak ada pemeliharaan yang dimulai.",
     "agent_not_running": "Agen ini tidak berjalan atau gagal dijalankan. Jalankan hingga berhasil sebelum pemeliharaan. Tidak ada pemeliharaan yang dimulai.",
-    "postgres_unsupported": "Agen ini memakai memori {backend}. PostgreSQL juga dapat menumpuk data duplikat atau pembengkakan penyimpanan dan mungkin butuh pemeliharaan sesuai pemakaian aktualnya. Perintah ini belum mendukung perampingan PostgreSQL; saat ini hanya mendukung SQLite. Tidak ada pemeliharaan yang dilakukan, dan Anda dapat terus mengobrol."
+    "postgres_unsupported": "Agen ini memakai memori {backend}. PostgreSQL juga dapat menumpuk data duplikat atau pembengkakan penyimpanan dan mungkin butuh pemeliharaan sesuai pemakaian aktualnya. Perintah ini belum mendukung perampingan PostgreSQL; saat ini hanya mendukung SQLite. Tidak ada pemeliharaan yang dilakukan, dan Anda dapat terus mengobrol.",
+    "sweeping": "Menghapus sisa-sisa dari agen dan percakapan yang dihapus…",
+    "swept": "Sisa dari agen atau percakapan yang dihapus telah dibersihkan: {namespaces} namespace memori, {threads} thread checkpoint, {directories} direktori.",
+    "orphan_dirs": "Direktori-direktori ini tidak cocok dengan agen mana pun saat ini:",
+    "orphan_dirs_confirm": "Hapus direktori yang tercantum di atas?",
+    "inspecting": "Memeriksa catatan kedaluwarsa pakar ini",
+    "cleaning": "Membersihkan catatan yang sudah dicadangkan",
+    "postgres_result": "Membersihkan {candidates} kandidat yang ditolak dan {journal} baris jurnal operasional untuk pakar ini. Memori aktif dan riwayat percakapan lengkap tetap dipertahankan; lihat pengaturan lanjutan memori untuk detail cadangan.",
+    "draining": "Menunggu pekerjaan latar pakar ini",
+    "validating": "Memvalidasi cadangan dan kepemilikan pakar",
+    "backing_up_current": "Mencadangkan keadaan pakar ini saat ini",
+    "restoring": "Memulihkan data pakar ini",
+    "restarting": "Memuat ulang pakar ini",
+    "restore_result": "Cadangan terpilih dipulihkan; cadangan pengaman pra-pemulihan: {backup}"
   },
   "teams": {
     "peer_thread_title": "Dari tim {name}",
@@ -885,5 +941,63 @@
     "saved": "Pengaturan koneksi agen tersimpan.",
     "invalid": "Pengaturan koneksi agen tidak valid.",
     "range_error": "Nilai harus antara {min} dan {max}."
+  },
+  "plugins": {
+    "arxiv_search": {
+      "empty_query": "Berikan kata kunci, ID makalah arXiv, atau URL arXiv.",
+      "invalid_sort": "sort_by harus relevance, lastUpdatedDate, atau submittedDate; sort_order harus ascending atau descending.",
+      "invalid_feed": "arXiv mengembalikan umpan Atom yang tidak valid.",
+      "failed": "Pencarian arXiv gagal: {error}",
+      "no_results": "Tidak ada makalah arXiv ditemukan untuk “{query}” di halaman ini.",
+      "results": "arXiv: {count} dari {total} makalah untuk “{query}”",
+      "paper": "{index}. {title}\\nPenulis: {authors}\\nAbstrak: {summary}\\n{url}\\nPDF: {pdf_url}",
+      "tool_description": "Cari makalah arXiv tanpa API key. query menerima kata kunci bahasa Inggris, ID makalah (1706.03762), URL abstrak/PDF arXiv, atau sintaks arXiv (ti:transformer AND cat:cs.AI, au:Vaswani, submittedDate:[202401010000 TO 202412312359]). Mengembalikan judul, penulis, abstrak lengkap, kategori, stempel waktu publikasi/pembaruan, dan URL abstrak/PDF. limit default 5 (1–20); start adalah offset hasil berbasis nol untuk paginasi. sort_by: relevance (default), submittedDate (makalah terbaru), lastUpdatedDate. sort_order default descending. Gunakan istilah pencarian bahasa Inggris untuk permintaan berbahasa Mandarin."
+    }
+  },
+  "update": {
+    "completed": "Ditingkatkan ke {version}.",
+    "fpk_completed": "Ditingkatkan ke {version}. Mulai ulang layanan di pusat aplikasi untuk memuat versi baru.",
+    "fpk_target_missing": "Direktori site-packages FPK tidak ada: {path}",
+    "version_unavailable": "Pemasang selesai, tetapi versi Oi yang terpasang tidak dapat diverifikasi.",
+    "version_mismatch": "Pemasang selesai, tetapi versi terpasang {actual} tidak cocok dengan versi yang diminta {expected}.",
+    "version_not_newer": "Pemasang selesai, tetapi versi terpasang {actual} tidak lebih baru dari {previous}."
+  },
+  "memory_storage": {
+    "postgres": "Tabel PostgreSQL dipakai bersama. Pemeliharaan per pakar tidak tersedia; minta administrator mengatur pemeliharaan basis data.",
+    "shared_sqlite": "Berkas SQLite ini dipakai bersama oleh beberapa pakar dan tidak dapat dipelihara untuk satu pakar saja.",
+    "incompatible": "Runtime memori tidak mendukung pemeliharaan penyimpanan langsung. Perbarui runtime dan jalankan pakarnya.",
+    "shared_namespace": "Beberapa ID pakar memetakan ke namespace memori yang sama. Pemeliharaan per pakar tidak tersedia.",
+    "namespace_mismatch": "Pakar tidak cocok dengan namespace memorinya. Muat ulang pakar sebelum melanjutkan.",
+    "namespace_busy": "Pekerjaan pemeliharaan lain sedang memakai memori pakar ini. Coba lagi nanti.",
+    "delete_backup_failed": "Gagal menghapus cadangan. Periksa izin berkas lalu coba lagi.",
+    "delete_sqlite_only": "Penghapusan cadangan memerlukan penyimpanan memori SQLite khusus untuk pakar ini.",
+    "invalid_backup": "Cadangan hilang atau bukan cadangan yang memenuhi syarat untuk pakar ini.",
+    "backup_scope": "Cadangan itu milik pakar lain atau skemanya tidak kompatibel. Pemulihan tidak dilakukan.",
+    "restore_changed": "Runtime atau penyimpanan pakar berubah. Periksa lagi sebelum mencoba ulang.",
+    "restore_reload_failed": "Tahap pemulihan data selesai, tetapi memulai ulang pakar gagal. Cadangan pengaman tetap disimpan. Mulai ulang pakar dan periksa hasilnya.",
+    "restore_sqlite_only": "Pemulihan memerlukan penyimpanan memori SQLite khusus untuk pakar ini."
+  },
+  "laya": {
+    "install_start": "Memasang Laya ke lingkungan terisolasi…",
+    "install_python": "Python: {python}",
+    "install_venv": "Lingkungan: {path}",
+    "install_torch": "Memasang PyTorch build CPU…",
+    "install_package": "Memasang laya[serve] {version}…",
+    "install_server": "Menjalankan laya-serve di 127.0.0.1:{port}. Peluncuran pertama mengunduh checkpoint multibahasa.",
+    "install_wait": "Menunggu layanan ({seconds} detik). Pengunduhan model pertama bisa memakan beberapa menit.",
+    "install_ready": "Laya siap di {endpoint}. Ia memilih checkpoint dari teks dan tidak memerlukan key.",
+    "already_running": "Layanan Laya sudah merespons di 127.0.0.1:{port}.",
+    "stopped": "Laya telah berhenti.",
+    "started": "Menjalankan Laya…",
+    "error_python": "Diperlukan Python 3.10 sampai 3.13. Build CPU PyTorch belum menerbitkan wheel Python 3.14. Pasang Python 3.12 dan coba lagi.",
+    "error_disk": "Hanya tersisa {free_gb} GB. Sisakan setidaknya {need_gb} GB sebelum memasang.",
+    "error_port": "Port {port} sudah dipakai oleh sesuatu yang bukan Laya.",
+    "error_command": "Perintah gagal (keluar {exit_code}): {command}",
+    "error_spawn": "Tidak dapat menjalankan {command}: {error}",
+    "error_missing_bin": "Pemasangan selesai, tetapi laya-serve tidak ditemukan.",
+    "error_health": "Laya tidak menjadi siap tepat waktu. Salin log-nya dan kirim ke Oi.",
+    "error_exited": "laya-serve keluar sebelum siap.",
+    "error_not_installed": "Laya belum terpasang.",
+    "error_stalled": "Pemasangan tidak menghasilkan apa pun terlalu lama dan dihentikan."
   }
 }

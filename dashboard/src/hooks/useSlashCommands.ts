@@ -37,10 +37,7 @@ export function useSlashCommands(origin = "ui") {
     };
   }, [origin, fallbackCommands]);
 
-  const labelFor = (spec: SlashCommandSpec) =>
-    i18n.language.startsWith("zh")
-      ? spec.label_zh || spec.label_en
-      : spec.label_en || spec.label_zh;
+  const labelFor = (spec: SlashCommandSpec) => spec.label_en || spec.label_zh;
 
   return { commands, loading, labelFor };
 }

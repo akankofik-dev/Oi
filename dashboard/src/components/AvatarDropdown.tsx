@@ -260,7 +260,7 @@ export default function AvatarDropdown({
     }
   };
 
-  const currentLang = i18n.language?.startsWith("zh") ? "zh" : i18n.language?.startsWith("id") ? "id" : "en";
+  const currentLang = i18n.language?.startsWith("id") ? "id" : "en";
   const roleLabel =
     role === "admin" ? t("account.roleAdmin") : t("account.roleUser");
 

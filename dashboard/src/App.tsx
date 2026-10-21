@@ -1,6 +1,5 @@
 import { createGlobalStyle } from "antd-style";
 import { ConfigProvider, theme as antdTheme } from "antd";
-import zhCN from "antd/locale/zh_CN";
 import enUS from "antd/locale/en_US";
 import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
@@ -50,9 +49,8 @@ function ThemedApp() {
   // Make antd built-ins (Popconfirm OK/Cancel, Modal default footer, Empty,
   // Pagination, DatePicker, Table… ) follow the current UI language.
   // DatePicker month/weekday labels come from dayjs — keep it in sync too.
-  const isZh = i18n.language?.toLowerCase().startsWith("zh") ?? false;
-  const antdLocale = isZh ? zhCN : enUS;
-  dayjs.locale(isZh ? "zh-cn" : "en");
+  const antdLocale = enUS;
+  dayjs.locale("en");
 
   useUnauthorizedRedirect();
 

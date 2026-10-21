@@ -76,7 +76,7 @@ function streamLayaInstall(
     method: "POST",
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      "Accept-Language": i18n.language?.startsWith("zh") ? "zh" : "en",
+      "Accept-Language": i18n.language?.startsWith("id") ? "id" : "en",
     },
     signal: controller.signal,
   })

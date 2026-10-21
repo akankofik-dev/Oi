@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from typing import Literal
 
-Locale = Literal["en", "id", "zh"]
+Locale = Literal["en", "id"]
 
 DEFAULT_LOCALE: Locale = "id"
-SUPPORTED_LOCALES: tuple[Locale, ...] = ("en", "id", "zh")
+SUPPORTED_LOCALES: tuple[Locale, ...] = ("en", "id")
 
 
 def normalize_locale(raw: str | None) -> Locale:
     """Normalize locale input to a supported locale.
 
-    Supports ``id`` (Bahasa Indonesia, default), ``en`` (English), and ``zh``
-    (legacy; resolves to Indonesian).
+    Supports ``id`` (Bahasa Indonesia, default) and ``en`` (English).
+    Any other input (including the removed ``zh``) resolves to Indonesian.
     """
     if not raw:
         return DEFAULT_LOCALE

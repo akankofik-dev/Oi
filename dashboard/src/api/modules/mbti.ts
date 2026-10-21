@@ -32,7 +32,7 @@ export const mbtiApi = {
   submitMBTITest: (
     answers: Record<string, string>,
     autoApply = false,
-    language = "zh",
+    language = "en",
     agentId?: string,
   ) =>
     request<MBTITestResult>("/mbti/test/submit", {
@@ -46,7 +46,7 @@ export const mbtiApi = {
     }),
 
   /** Apply a specific MBTI type to the active agent (regenerates SOUL.md). */
-  applyMBTIType: (code: string, language = "zh", agentId?: string) =>
+  applyMBTIType: (code: string, language = "en", agentId?: string) =>
     request<MBTIApplyResponse>("/mbti/apply", {
       method: "POST",
       body: JSON.stringify({ code, language }),
