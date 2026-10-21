@@ -1,4 +1,5 @@
 # Build
+PKG-INFO
 build/
 !desktop/src/build/
 !desktop/src/build/**
