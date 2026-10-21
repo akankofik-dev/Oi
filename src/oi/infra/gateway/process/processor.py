@@ -1013,7 +1013,6 @@ class GlobalProcessor:
             message, error_code = _stream_error(exc, locale)
             if error_code:
                 message = f"[{error_code}] {message}"
-            persist_failed_turn = True
             history_tracker.observe(
                 {
                     "type": "error",
@@ -1021,6 +1020,12 @@ class GlobalProcessor:
                     **({"error_code": error_code} if error_code else {}),
                 }
             )
+            # Persist the failed turn BEFORE delivering the error event: a
+            # consumer that closes on the error must not lose it.
+            await self._persist_incomplete_turn(
+                thread_id, history_tracker, title_source=msg.text
+            )
+            persist_failed_turn = True
             yield MessageEvent.error_event(message)
         else:
             if stream_ok and not hitl_paused:
@@ -1052,11 +1057,11 @@ class GlobalProcessor:
             # Feed the auto-router's latency tracker (no-op unless the
             # auto_router flag is ON; never raises).
             record_turn_latency(agent_id, time.monotonic() - turn_started_at)
-            if persist_failed_turn or (not stream_ok and not hitl_paused):
+            if not persist_failed_turn and (not stream_ok and not hitl_paused):
                 await self._persist_incomplete_turn(
                     thread_id, history_tracker, title_source=msg.text
                 )
-            else:
+            elif not persist_failed_turn:
                 await self._finish_history(history_tracker, completed=stream_ok and not hitl_paused)
         yield MessageEvent.completed()
 
@@ -1397,6 +1402,11 @@ class GlobalProcessor:
             if error_code:
                 payload["error_code"] = error_code
             history_tracker.observe(payload)
+            # Persist the failed turn BEFORE delivering the error chunk: a
+            # consumer that closes on the error must not lose it.
+            await self._persist_incomplete_turn(
+                thread_id, history_tracker, title_source=msg.text
+            )
             persist_failed_turn = True
             yield _maybe_stamp_team_host(payload, agent_id, team_host)
         finally:
@@ -1412,11 +1422,11 @@ class GlobalProcessor:
             # auto_router flag is ON; never raises).
             record_turn_latency(agent_id, time.monotonic() - turn_started_at)
             self._finish_trajectory(thread_id=thread_id, usage=usage_tracker.usage, enabled=traj_on)
-            if persist_failed_turn or not stream_ok:
+            if not persist_failed_turn and not stream_ok:
                 await self._persist_incomplete_turn(
                     thread_id, history_tracker, title_source=msg.text
                 )
-            else:
+            elif not persist_failed_turn:
                 await self._finish_history(history_tracker, completed=stream_ok)
         if stream_ok:
             self._touch_thread_after_turn(thread_id, msg.text)
@@ -1476,6 +1486,9 @@ class GlobalProcessor:
             if error_code:
                 payload["error_code"] = error_code
             history_tracker.observe(payload)
+            # Persist the failed turn BEFORE delivering the error chunk: a
+            # consumer that closes on the error must not lose it.
+            await self._persist_incomplete_turn(thread_id, history_tracker, title_source=None)
             persist_failed_turn = True
             yield _maybe_stamp_team_host(payload, agent_id, team_host)
         finally:
@@ -1485,9 +1498,9 @@ class GlobalProcessor:
 
             await flush_batch(history_tracker, flush_tracker)
             self._finish_trajectory(thread_id=thread_id, usage=usage_tracker.usage, enabled=traj_on)
-            if persist_failed_turn or not completed:
+            if not persist_failed_turn and not completed:
                 await self._persist_incomplete_turn(thread_id, history_tracker, title_source=None)
-            else:
+            elif not persist_failed_turn:
                 await self._finish_history(history_tracker, completed=completed)
             if completed:
                 self._touch_thread_after_turn(thread_id, None)

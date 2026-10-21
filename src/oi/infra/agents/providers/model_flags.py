@@ -88,19 +88,21 @@ def is_ollama_local_provider(
     provider_api_key: str | None = None,
     provider_base_url: str | None = None,
 ) -> bool:
-    """True when this row is the local Ollama preset.
+    """True when this row is the onboard Ollama preset.
 
-    Prefer the stable placeholder API key, then exact preset names. Base URL
-    hints match the dashboard (port 11434 / host ``ollama``) so delete
-    protection stays aligned with the hidden UI button.
+    Identity only: the placeholder API key written at create time, or an
+    exact preset name. ``provider_base_url`` is accepted for call-site
+    compatibility and ignored — custom providers that happen to point at
+    ``:11434`` / ``http://ollama`` must stay deletable.
     """
+    _ = provider_base_url
     if is_onnx_local_provider(provider_name, provider_api_key=provider_api_key):
         return False
     if provider_api_key is not None and provider_api_key.strip().lower() == _OLLAMA_PRESET_API_KEY:
         return True
-    if provider_name and provider_name.strip().lower() in _OLLAMA_PRESET_NAMES:
-        return True
-    return _is_local_ollama_url(provider_base_url or "")
+    if not provider_name:
+        return False
+    return provider_name.strip().lower() in _OLLAMA_PRESET_NAMES
 
 
 def is_local_runtime_provider(
@@ -109,7 +111,10 @@ def is_local_runtime_provider(
     provider_api_key: str | None = None,
     provider_base_url: str | None = None,
 ) -> bool:
-    """True for onboard local runtimes (ONNX / Ollama) that must not be deleted."""
+    """True for onboard local runtimes (ONNX / Ollama) that must not be deleted.
+
+    URL is accepted for call-site compatibility and ignored.
+    """
     return is_onnx_local_provider(
         provider_name, provider_api_key=provider_api_key
     ) or is_ollama_local_provider(

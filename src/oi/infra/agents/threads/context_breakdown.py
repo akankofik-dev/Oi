@@ -147,7 +147,8 @@ def usage_dict_from_message(msg: Any) -> dict[str, Any] | None:
     if inp == 0 and out == 0:
         inp, out = _io_from_mapping(mapped_response)
 
-    if inp == 0 and out == 0:
+    saved = _token_int(stamped.get("decision_saved")) if isinstance(stamped, dict) else 0
+    if inp == 0 and out == 0 and saved == 0:
         return None
     payload: dict[str, Any] = {
         "input_tokens": inp,
@@ -186,6 +187,8 @@ def usage_dict_from_message(msg: Any) -> dict[str, Any] | None:
                 "model_calls": 1,
             }
         )
+    if saved:
+        payload["decision_saved"] = saved
     return payload
 
 

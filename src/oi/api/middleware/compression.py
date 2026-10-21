@@ -65,14 +65,22 @@ class _TextOnlyGZipResponder(GZipResponder):
     """
 
     async def send_with_compression(self, message: MutableMapping[str, Any]) -> None:
-        await super().send_with_compression(message)
-        # ``http.response.start`` only stashes the message; the body message is
-        # what flushes headers, so flipping the flag right after is still in
-        # time to suppress compression.
+        # Decide exclusion on the start message *before* delegating: newer
+        # Starlette responders flush the body immediately for excluded types,
+        # so flipping ``content_type_is_excluded`` after ``super()`` has seen
+        # the start (the old approach) can emit ``http.response.body`` before
+        # ``http.response.start`` and trip BaseHTTPMiddleware's assertion.
+        # Non-compressible responses pass through untouched instead.
         if message["type"] == "http.response.start":
-            content_type = Headers(raw=self.initial_message["headers"]).get("content-type", "")
+            content_type = Headers(raw=message["headers"]).get("content-type", "")
             if not is_compressible_content_type(content_type):
-                self.content_type_is_excluded = True
+                self._passthrough = True
+                await self.send(message)
+                return
+        if getattr(self, "_passthrough", False):
+            await self.send(message)
+            return
+        await super().send_with_compression(message)
 
 
 class TextGZipMiddleware(GZipMiddleware):

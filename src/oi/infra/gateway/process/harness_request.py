@@ -49,16 +49,18 @@ def _group_turn_text(
         if safe_id not in anonymous_labels:
             index = len(anonymous_labels) + 1
             anonymous_labels[safe_id] = (
-                f"群成员{index}" if language == "zh" else f"Group member {index}"
+                f"Anggota grup {index}" if language == "id" else f"Group member {index}"
             )
         return anonymous_labels[safe_id]
 
     context_header = (
-        "【群聊背景｜仅供参考】" if language == "zh" else "[Group context | reference only]"
+        "[Konteks grup | hanya untuk referensi]"
+        if language == "id"
+        else "[Group context | reference only]"
     )
     current_header = (
-        "【当前群消息｜请回复这条消息】"
-        if language == "zh"
+        "[Pesan grup saat ini | balas pesan ini]"
+        if language == "id"
         else "[Current group message | reply to this]"
     )
 
@@ -264,6 +266,7 @@ def build_harness_request(
     content: str | list[dict[str, Any]] | None = None,
     messages: list[Any] | None = None,
     model: str | None = None,
+    auto_route: bool = False,
     message_kwargs: dict[str, Any] | None = None,
     reasoning_overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -289,6 +292,8 @@ def build_harness_request(
         if agent_id is not None:
             req["agent_id"] = agent_id
         configurable: dict[str, Any] = {}
+        if auto_route:
+            configurable["oi_auto_route"] = True
         if session_key is not None:
             configurable["session_key"] = session_key
         if reasoning_overrides:
@@ -323,6 +328,8 @@ def build_harness_request(
     if agent_id is not None:
         req["agent_id"] = agent_id
     configurable = {}
+    if auto_route:
+        configurable["oi_auto_route"] = True
     if session_key is not None:
         configurable["session_key"] = session_key
     if reasoning_overrides:

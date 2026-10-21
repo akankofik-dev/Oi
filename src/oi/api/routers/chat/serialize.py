@@ -99,7 +99,11 @@ def _is_attachment_path_hint_text(text: str) -> bool:
     if not stripped:
         return False
     first = stripped.split("\n", 1)[0].strip()
-    return first.startswith("[Attachment] ") or first.startswith("[附件] ")
+    return (
+        first.startswith("[Attachment] ")
+        or first.startswith("[附件] ")
+        or first.startswith("[Lampiran] ")
+    )
 
 
 def _strip_attachment_hints_from_text(text: str) -> str:
@@ -1027,6 +1031,9 @@ def _serialize_history_message(
         cleaned = [path.strip() for path in edited if isinstance(path, str) and path.strip()]
         if cleaned:
             entry["edited_files"] = cleaned
+    decision = additional_kwargs.get("oi_decision")
+    if role == "assistant" and isinstance(decision, dict) and decision.get("kind") == "decision":
+        entry["decision"] = decision
     return _apply_history_timestamp(entry, msg, fallback_created_at)
 
 

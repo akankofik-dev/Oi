@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import re
@@ -262,6 +263,55 @@ def _memory_extract_settings(
         ):
             out[dst] = float(val)
 
+    # Aux-call options (#1360): read timeouts per tier, an extraction output
+    # budget, and vendor request extras for the aux LLM. Forward-compat: only
+    # forwarded when the installed oi-harness knows the field.
+    for src, dst in (
+        ("extract_light_timeout_s", "memory_aux_light_timeout_s"),
+        ("extract_heavy_timeout_s", "memory_aux_heavy_timeout_s"),
+    ):
+        val = mem.get(src)
+        if (
+            dst in supported_fields
+            and isinstance(val, int | float)
+            and not isinstance(val, bool)
+            and val > 0
+        ):
+            # Older API versions accepted timeouts beyond harness limits.
+            out[dst] = max(30.0, min(3600.0, float(val)))
+    max_tokens = mem.get("extract_max_tokens")
+    if (
+        "memory_extract_max_tokens" in supported_fields
+        and isinstance(max_tokens, int)
+        and not isinstance(max_tokens, bool)
+        and max_tokens > 0
+    ):
+        out["memory_extract_max_tokens"] = max(128, min(65536, max_tokens))
+    thinking = mem.get("extract_thinking")
+    if thinking in ("auto", "off", "on") and "memory_aux_thinking" in supported_fields:
+        out["memory_aux_thinking"] = thinking
+    for src, dst in (
+        ("extract_max_retries", "memory_aux_max_retries"),
+        ("extract_retry_backoff_s", "memory_aux_retry_backoff_s"),
+    ):
+        value = mem.get(src)
+        if (
+            dst in supported_fields
+            and isinstance(value, int | float)
+            and not isinstance(value, bool)
+        ):
+            out[dst] = value
+    extra_body = mem.get("extract_extra_body")
+    aux_model = mem.get("aux_model")
+    has_aux_override = isinstance(aux_model, str) and bool(aux_model.strip())
+    if (
+        "memory_aux_extra_body" in supported_fields
+        and isinstance(extra_body, dict)
+        and extra_body
+        and (not has_aux_override or "memory_aux_light_model" in out)
+    ):
+        out["memory_aux_extra_body"] = dict(extra_body)
+
     # oi-harness 0.9.5 predates the interval trigger fields. Keep
     # hot reload working against that release and approximate interval mode
     # with its per-session idle watchdog until a newer harness is installed.
@@ -278,6 +328,19 @@ def _memory_extract_settings(
             "falling back to the idle watchdog for this agent"
         )
     return out
+
+def memory_extract_supported_options() -> list[str]:
+    """Call options supported by the installed harness, for the settings UI."""
+    fields = {
+        "extract_max_tokens": "memory_extract_max_tokens",
+        "extract_light_timeout_s": "memory_aux_light_timeout_s",
+        "extract_heavy_timeout_s": "memory_aux_heavy_timeout_s",
+        "extract_thinking": "memory_aux_thinking",
+        "extract_extra_body": "memory_aux_extra_body",
+        "extract_max_retries": "memory_aux_max_retries",
+        "extract_retry_backoff_s": "memory_aux_retry_backoff_s",
+    }
+    return [key for key, field in fields.items() if field in _HARNESS_AGENT_CONFIG_FIELDS]
 
 
 def _resolve_memory_backend_kwargs(
@@ -442,6 +505,11 @@ class AgentManager:
         )
         self._harness_manager: HarnessAgentManager | None = None
         self.memory_slim = MemorySlimCoordinator(self)
+        self._bootstrap_known: dict[str, bool] = {}
+        self._reclaim_pending: set[str] = set()
+        self._reclaim_holds: dict[str, asyncio.Event] = {}
+        self._reclaim_task: asyncio.Task[None] | None = None
+        self._reclaim_wake: asyncio.Event | None = None
         self._lock = asyncio.Lock()
         # Serialize start/reload per agent so parallel provider reloads cannot
         # double-register the same harness id ("already exists in the registry").
@@ -541,11 +609,18 @@ class AgentManager:
     async def boot(self) -> None:
         self._tool_guard_rules.ensure_seeded()
         providers = self._providers.build_harness_configs()
+        # oi-harness >= 1.0.3 accepts file_logging=False (reuse the process
+        # log instead of dated harness files); older harness builds fall
+        # back to an explicit log_dir.
+        if "file_logging" in inspect.signature(HarnessAgentManager.__init__).parameters:
+            manager_kwargs: dict[str, Any] = {"file_logging": False}
+        else:
+            manager_kwargs = {"log_dir": str(self.paths.logs_dir)}
         self._harness_manager = HarnessAgentManager(
             providers=providers,
             langfuse=self._langfuse.harness_config(),
             team_processor=self._team_processor,
-            log_dir=str(self.paths.logs_dir),
+            **manager_kwargs,
         )
         if self._harness_manager is not None:
             self._harness_manager.team.bind_peer_enrich(self._refresh_peer_entry)
@@ -831,11 +906,35 @@ class AgentManager:
         except Exception:
             logger.exception("abort team create: harness remove failed for %s", agent_id)
         try:
+            row = self._repos.agent_repo.get(agent_id)
             workspace_dir = self.resolve_workspace_dir(agent_id, persist_if_missing=False)
-            if await asyncio.to_thread(workspace_dir.exists):
+            if row is not None:
+                from oi.infra.agents.memory.thread_cleanup import (  # noqa: PLC0415
+                    agent_config_from_row,
+                    delete_agent_memory_and_checkpoints,
+                )
+
+                cfg = agent_config_from_row(row)
+                await asyncio.to_thread(
+                    delete_agent_memory_and_checkpoints,
+                    agent_id=agent_id,
+                    thread_ids=self._repos.thread_repo.list_ids_for_agent(agent_id),
+                    cfg=cfg,
+                    oi_config=self._config,
+                    workspace_dir=workspace_dir,
+                    paths=self._paths,
+                )
+                from oi.infra.agents.workspace.dir import remove_agent_host_dirs  # noqa: PLC0415
+
+                await asyncio.to_thread(
+                    remove_agent_host_dirs, cfg, paths=self._paths, agent_id=agent_id
+                )
+            elif await asyncio.to_thread(workspace_dir.exists):
                 await asyncio.to_thread(shutil.rmtree, workspace_dir)
         except OSError:
             logger.exception("abort team create: rmtree failed for %s", agent_id)
+        except Exception:
+            logger.exception("abort team create: memory purge failed for %s", agent_id)
         try:
             self._repos.agent_repo.delete(agent_id)
         except Exception:
@@ -956,14 +1055,24 @@ class AgentManager:
         return updated
 
     async def delete(self, agent_id: str) -> None:
-        """Remove agent from DB, harness runtime, and workspace directory."""
+        """Remove agent from DB, harness runtime, workspace, memory, and checkpoints.
+
+        Checkpoint rows and Postgres memory namespaces are not foreign keys
+        of ``agents``. They are deleted before the agent row. If that purge
+        fails, the row stays so the delete can be retried.
+        """
         row = self._repos.agent_repo.get(agent_id)
         if row is None:
             raise OiError(ErrorCode.AGENT_NOT_FOUND, f"agent {agent_id!r} not found")
         self._teams.assert_can_delete_agent(agent_id)
+        from oi.infra.agents.memory.thread_cleanup import (  # noqa: PLC0415
+            agent_config_from_row,
+            delete_agent_memory_and_checkpoints,
+        )
         from oi.infra.agents.teams import is_team_agent
 
         affected_teams: list[str] = []
+        thread_ids = self._repos.thread_repo.list_ids_for_agent(agent_id)
         workspace_dir = self.resolve_workspace_dir(agent_id, persist_if_missing=False)
         async with self._lock:
             if not is_team_agent(row):
@@ -973,10 +1082,24 @@ class AgentManager:
                     logger.exception("failed to drop deleted expert %s from team rosters", agent_id)
             await asyncio.to_thread(self._quiesce_oi_memory, agent_id)
             await self._harness_manager.aremove_agent(agent_id)  # type: ignore[union-attr]
+        self._bootstrap_known.pop(agent_id, None)
         self._plugin_tool_labels.pop(agent_id, None)
+        cfg = agent_config_from_row(row)
+        await asyncio.to_thread(
+            delete_agent_memory_and_checkpoints,
+            agent_id=agent_id,
+            thread_ids=thread_ids,
+            cfg=cfg,
+            oi_config=self._config,
+            workspace_dir=workspace_dir,
+            paths=self._paths,
+        )
         try:
-            if await asyncio.to_thread(workspace_dir.exists):
-                await asyncio.to_thread(shutil.rmtree, workspace_dir)
+            from oi.infra.agents.workspace.dir import remove_agent_host_dirs  # noqa: PLC0415
+
+            await asyncio.to_thread(
+                remove_agent_host_dirs, cfg, paths=self._paths, agent_id=agent_id
+            )
         except OSError:
             logger.exception("rmtree failed for %s; agent removed from DB anyway", workspace_dir)
         self._repos.agent_repo.delete(agent_id)
@@ -1103,6 +1226,84 @@ class AgentManager:
                 pass
         return self._backend_workspace_for_row(row)
 
+    async def save_manual_memory_document(self, agent_id: str, filename: str, content: str) -> None:
+        """Serialize owner edits with document review and lifecycle changes."""
+        if filename not in {"USER.md", "MEMORY.md"}:
+            raise ValueError("Unsupported manual memory document")
+        async with self._lifecycle_lock_for(agent_id):
+            workspace = await asyncio.to_thread(self.workspace_for_agent, agent_id)
+            if workspace is None:
+                raise self._unavailable_error(agent_id)
+            await workspace.awrite_text(filename, content, force=True)
+
+    async def review_manual_memory_documents(self, agent_id: str) -> dict[str, Any]:
+        """Review current files, including for stopped agents, without changing session snapshots."""
+        async with self._lifecycle_lock_for(agent_id):
+            if self.memory_slim.busy and self.memory_slim.status(agent_id) is not None:
+                raise OiError.localized(ErrorCode.AGENT_BUSY)
+            workspace = await asyncio.to_thread(self.workspace_for_agent, agent_id)
+            if workspace is None:
+                raise self._unavailable_error(agent_id)
+            documents = {}
+            for filename in ("USER.md", "MEMORY.md"):
+                data = await workspace.adownload_bytes(filename)
+                documents[filename] = data.decode("utf-8") if data is not None else ""
+
+            def run() -> dict[str, Any]:
+                from oi_harness.llm.factory import ChatModelFactory
+                from oi_harness.memory.runtime import MemoryRuntime
+
+                temporary = None
+                owned_factory = None
+                try:
+                    try:
+                        service = self.get_agent(agent_id)._memory_runtime.service
+                    except OiError:
+                        row = self.get_row(agent_id)
+                        if row is None:
+                            raise self._unavailable_error(agent_id) from None
+                        cfg = self._build_harness_config(row)
+                        if not cfg.memory_enabled:
+                            return {"status": "disabled"}
+                        factory = (
+                            self._harness_manager.shared_factory
+                            if self._harness_manager is not None
+                            else None
+                        )
+                        if factory is None:
+                            factory = owned_factory = ChatModelFactory(
+                                cfg.providers, agent_config=cfg
+                            )
+                        temporary = MemoryRuntime(
+                            config=cfg,
+                            workspace_path=Path(cfg.workspace_dir),
+                            model_factory=factory,
+                            workspace=workspace,
+                        )
+                        service = temporary.service
+                    if service is None:
+                        return {"status": "disabled"}
+
+                    def current() -> bool:
+                        return all(
+                            (workspace.download_bytes(name) or b"").decode("utf-8") == body
+                            for name, body in documents.items()
+                        )
+
+                    return dict(service.reconcile_manual_documents(documents, is_current=current))
+                finally:
+                    if temporary is not None:
+                        temporary.close()
+                    if owned_factory is not None:
+                        owned_factory.close()
+
+            worker = asyncio.create_task(asyncio.to_thread(run))
+            try:
+                return await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                await worker
+                raise
+
     def list_agents(self, user_id: int) -> list[AgentRow]:
         return self._repos.agent_repo.list_by_user(user_id, include_disabled=False)
 
@@ -1202,7 +1403,13 @@ class AgentManager:
         if is_team_agent(self.get_row(agent_id)):
             return True
         try:
-            return self.get_agent(agent_id).is_bootstrapped()
+            agent = self.get_agent(agent_id)
+        except OiError:
+            return False
+        if self._bootstrap_known.get(agent_id) is True:
+            return True
+        try:
+            known = agent.is_bootstrapped()
         except OiError:
             return False
         except Exception:
@@ -1212,6 +1419,9 @@ class AgentManager:
                 exc_info=True,
             )
             return True
+        if known:
+            self._bootstrap_known[agent_id] = True
+        return known
 
     def find_agents_using_provider(self, provider_name: str) -> list[dict[str, str]]:
         """Return agents referencing *provider_name* in config or default_model."""
@@ -1320,6 +1530,190 @@ class AgentManager:
             oi_config=self._config,
             workspace_dir=workspace,
             paths=self._paths,
+        )
+
+    def assert_agents_deletable(self, agent_ids: Sequence[str]) -> None:
+        """Raise when any owned agent has an in-flight team job."""
+        for agent_id in agent_ids:
+            self._teams.assert_can_delete_agent(agent_id)
+
+    def _reclaim_thread_store(self, agent_id: str, thread_id: str, row: Any) -> None:
+        if row is None:
+            return
+        from oi.infra.agents.memory.thread_cleanup import (  # noqa: PLC0415
+            reclaim_stored_thread,
+            workspace_for_agent_row,
+        )
+
+        reclaim_stored_thread(
+            agent_id=agent_id,
+            thread_id=thread_id,
+            cfg=self._agent_config_dict(row),
+            oi_config=self._config,
+            workspace_dir=workspace_for_agent_row(row, paths=self._paths),
+        )
+
+    def schedule_store_reclaim(self, agent_id: str) -> None:
+        """Shrink this agent's database after it is idle.
+
+        Used when a conversation is deleted without compacting now. The
+        rebuild runs once no turn is in progress, and again after restart
+        if the file still holds a large freelist.
+        """
+        self._reclaim_pending.add(agent_id)
+        self._ensure_reclaim_task()
+
+    def schedule_idle_reclaim_sweep(self) -> None:
+        """Queue loaded stores whose freelist is already large enough to compact."""
+        try:
+            asyncio.get_running_loop().create_task(
+                self._sweep_bloated_stores(), name="store-reclaim-sweep"
+            )
+        except RuntimeError:
+            return
+
+    async def compact_agent_database(self, agent_id: str, *, wait_s: float = 60) -> bool:
+        """Rebuild the database now. False means it was deferred until idle."""
+        deadline = time.monotonic() + wait_s
+        while True:
+            if self._try_acquire_reclaim(agent_id):
+                try:
+                    done = await asyncio.to_thread(self._compact_agent_database_sync, agent_id)
+                finally:
+                    self._release_reclaim(agent_id)
+                if done:
+                    self._reclaim_pending.discard(agent_id)
+                    return True
+                self.schedule_store_reclaim(agent_id)
+                return False
+            if time.monotonic() >= deadline:
+                self.schedule_store_reclaim(agent_id)
+                return False
+            await asyncio.sleep(0.25)
+
+    def _try_acquire_reclaim(self, agent_id: str) -> bool:
+        if (
+            self.is_agent_active(agent_id)
+            or self._invocation_waiters.get(agent_id, 0) > 0
+            or agent_id in self._reclaim_holds
+            or agent_id in self._history_backfills
+        ):
+            return False
+        self._reclaim_holds[agent_id] = asyncio.Event()
+        if self.is_agent_active(agent_id) or self._invocation_waiters.get(agent_id, 0) > 0:
+            self._release_reclaim(agent_id)
+            return False
+        return True
+
+    def _release_reclaim(self, agent_id: str) -> None:
+        event = self._reclaim_holds.pop(agent_id, None)
+        if event is not None:
+            event.set()
+
+    def _ensure_reclaim_task(self) -> None:
+        if self._reclaim_wake is None:
+            self._reclaim_wake = asyncio.Event()
+        self._reclaim_wake.set()
+        task = self._reclaim_task
+        if task is not None and not task.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._reclaim_task = loop.create_task(self._reclaim_pending_loop(), name="store-reclaim")
+
+    async def _sweep_bloated_stores(self) -> None:
+        queued = await asyncio.to_thread(self._queue_bloated_sqlite_stores)
+        if queued:
+            self._ensure_reclaim_task()
+
+    def _queue_bloated_sqlite_stores(self) -> int:
+        from oi.infra.agents.memory.thread_cleanup import (  # noqa: PLC0415
+            RECLAIM_MIN_FREELIST_BYTES,
+            agent_config_from_row,
+            agent_sqlite_freelist_bytes,
+            workspace_for_agent_row,
+        )
+
+        queued = 0
+        for row in self._repos.agent_repo.list_all(include_disabled=True):
+            try:
+                nbytes = agent_sqlite_freelist_bytes(
+                    agent_id=row.agent_id,
+                    cfg=agent_config_from_row(row),
+                    oi_config=self._config,
+                    workspace_dir=workspace_for_agent_row(row, paths=self._paths),
+                    paths=self._paths,
+                )
+            except Exception:
+                logger.warning("freelist scan failed agent=%s", row.agent_id, exc_info=True)
+                continue
+            if nbytes < RECLAIM_MIN_FREELIST_BYTES:
+                continue
+            self._reclaim_pending.add(row.agent_id)
+            queued += 1
+        return queued
+
+    async def _reclaim_pending_loop(self) -> None:
+        try:
+            while self._reclaim_pending:
+                finished_one = False
+                for agent_id in list(self._reclaim_pending):
+                    if not self._try_acquire_reclaim(agent_id):
+                        continue
+                    try:
+                        done = await asyncio.to_thread(self._compact_agent_database_sync, agent_id)
+                    except Exception:
+                        logger.warning("idle compact failed agent=%s", agent_id, exc_info=True)
+                        done = False
+                    finally:
+                        self._release_reclaim(agent_id)
+                    if done:
+                        self._reclaim_pending.discard(agent_id)
+                        finished_one = True
+                if not self._reclaim_pending:
+                    break
+                if finished_one:
+                    continue
+                wake = self._reclaim_wake
+                if wake is None:
+                    await asyncio.sleep(30)
+                    continue
+                wake.clear()
+                try:
+                    await asyncio.wait_for(wake.wait(), timeout=30)
+                except TimeoutError:
+                    continue
+        finally:
+            current = asyncio.current_task()
+            if self._reclaim_task is current:
+                self._reclaim_task = None
+            if self._reclaim_pending and (self._reclaim_task is None or self._reclaim_task.done()):
+                self._ensure_reclaim_task()
+
+    def _compact_agent_database_sync(self, agent_id: str) -> bool:
+        from oi.infra.agents.memory.thread_cleanup import (  # noqa: PLC0415
+            agent_config_from_row,
+            compact_agent_store_file,
+            compact_live_sqlite,
+            workspace_for_agent_row,
+        )
+
+        row = self.get_row(agent_id)
+        if row is None:
+            return True
+        harness = self._oi_harness_or_none(agent_id)
+        if harness is not None:
+            memory = getattr(getattr(harness, "_memory_runtime", None), "memory", None)
+            if memory is None:
+                return True
+            return compact_live_sqlite(memory)
+        return compact_agent_store_file(
+            agent_id=agent_id,
+            cfg=agent_config_from_row(row),
+            oi_config=self._config,
+            workspace_dir=workspace_for_agent_row(row, paths=self._paths),
         )
 
     async def restore_memory_store(
@@ -3629,7 +4023,7 @@ class AgentManager:
             # ``resolve_explicit_default_model`` directly.
             default_model=(
                 self._providers.resolve_explicit_default_model(row, cfg)
-                or self.resolve_fallback_model_ref()
+                or self._resolve_configured_fallback_model_ref()
             ),
             system_prompt=system_prompt,
             memory=memory,
@@ -3689,7 +4083,7 @@ class AgentManager:
                     max_retries=applied.model_retry_max_retries,
                     initial_delay=applied.model_retry_initial_delay,
                     max_delay=applied.model_retry_max_delay,
-                    on_failure=_model_retry_on_failure,
+                    on_failure="error",
                     quota=self._quota,
                 )
             else:
@@ -3699,7 +4093,7 @@ class AgentManager:
                     max_retries=applied.model_retry_max_retries,
                     initial_delay=applied.model_retry_initial_delay,
                     max_delay=applied.model_retry_max_delay,
-                    on_failure=_model_retry_on_failure,
+                    on_failure="error",
                 )
 
             applied = replace(

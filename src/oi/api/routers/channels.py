@@ -14,13 +14,13 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path as _FsPath
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from pydantic import BaseModel, ValidationError
+from pydantic import AfterValidator, BaseModel, ValidationError
 
 from oi.api.common.agent import require_agent_owner_row
-from oi.api.deps import get_server, require_permission
+from oi.api.deps import current_user, get_server, require_permission
 from oi.infra.errors import ErrorCode, OiError
 from oi.infra.gateway.bot_creators.feishu_runner import extract_feishu_credentials
 from oi.infra.gateway.channels import dingtalk_registration, qr_bind
@@ -33,21 +33,43 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _validate_channel_kind(value: str) -> str:
+    """Accept builtin kinds plus plugin-registered kinds (case-normalized)."""
+    normalized = str(value).strip().lower()
+    try:
+        ChannelKind(normalized)
+        return normalized
+    except ValueError:
+        pass
+    from oi.infra.gateway.plugin_channels import plugin_channel_kinds
+
+    if any(info.kind == normalized for info in plugin_channel_kinds()):
+        return normalized
+    raise ValueError(
+        f"unknown channel kind {value!r}; "
+        f"builtin kinds: {[k.value for k in ChannelKind]}, "
+        "plus kinds registered by installed channel plugins"
+    )
+
+
+_ChannelKindField = Annotated[str, AfterValidator(_validate_channel_kind)]
+
+
 class ChannelCreateBody(BaseModel):
-    kind: ChannelKind
+    kind: _ChannelKindField
     name: str
     config: dict[str, Any] = {}
 
 
 class ChannelPatchBody(BaseModel):
-    kind: ChannelKind | None = None
+    kind: _ChannelKindField | None = None
     name: str | None = None
     config: dict[str, Any] | None = None
     enabled: bool | None = None
 
 
 class ChannelProbeBody(BaseModel):
-    kind: ChannelKind
+    kind: _ChannelKindField
     config: dict[str, Any] = {}
 
 
@@ -156,6 +178,20 @@ async def create_channel(
         row, gateway=server.app_runtime.gateway, locale=resolve_request_locale(request)
     )
 
+
+@router.get("/channels/plugin-kinds", summary="List plugin-contributed channel kinds")
+async def list_plugin_channel_kinds(
+    _user: Any = Depends(current_user),
+) -> list[dict[str, Any]]:
+    """Channel kinds contributed by installed ``kind: channel`` plugins.
+
+    The dashboard merges these into the channel catalogue (cards, drawer
+    form schemas). Returns summaries with ``kind``/``label``/``icon``/
+    ``intro_url``/``fields``/``plugin_id``.
+    """
+    from oi.infra.gateway.plugin_channels import plugin_channel_kinds  # noqa: PLC0415
+
+    return [info.to_dict() for info in plugin_channel_kinds()]
 
 @router.get("/agents/{agent_id}/channels/{channel_id}")
 async def get_channel(

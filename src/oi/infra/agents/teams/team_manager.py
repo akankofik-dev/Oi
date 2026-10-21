@@ -1493,6 +1493,9 @@ def _is_team_system_prompt(text: str) -> bool:
             "[background task",
             "[Team assignment",
             "[Host dispatch",
+            "[Dispatch host",
+            "[Penugasan tim",
+            "[Penutup host",
             "以下是当前群聊记录",
             "Here is the current group-chat transcript",
         )

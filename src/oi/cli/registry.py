@@ -32,6 +32,7 @@ COMMANDS: dict[str, tuple[str, str, str]] = {
     "update": (".commands.update", "update", "Check for and install a newer Oi release."),
     "clean": (".commands.clean", "clean", "Remove CLI state or wipe all of ~/.oi."),
     "backup": (".commands.backup", "backup", "Export and restore Oi backups."),
+    "bridge": (".commands.bridge", "bridge", "Manage remote Oi bridge peers."),
     "acp": (".commands.acp", "acp_cmd", "Run Oi agent as ACP server (stdio)."),
     "plugin": (".commands.plugin", "plugin", "Install and manage plugins."),
     "tunnel": (".commands.tunnel", "tunnel", "Expose Oi to the internet via Cloudflare Tunnel."),
