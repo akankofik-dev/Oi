@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
 
@@ -102,6 +103,14 @@ def clear_stale_pins_for_provider(
     return cleared
 
 
+@dataclass(frozen=True)
+class AutoRouteCandidate:
+    """One usable model and its effective prompt capacity."""
+
+    ref: str
+    max_input_tokens: int
+
+
 class ProviderStore:
     """Maps persisted provider rows to harness runtime provider configs."""
 
@@ -130,6 +139,39 @@ class ProviderStore:
     def has_usable_providers(self) -> bool:
         """True when at least one enabled provider has credentials and a model."""
         return next(self.iter_usable_rows(), None) is not None
+
+    def list_auto_route_candidates(
+        self,
+        *,
+        needs_multimodal: bool,
+    ) -> list[AutoRouteCandidate]:
+        """Return stable, usable candidates for one automatic route."""
+        candidates: list[AutoRouteCandidate] = []
+        for row in self.iter_usable_rows():
+            for model in row.get_models():
+                if not is_chat_eligible_model(
+                    model,
+                    provider_name=row.name,
+                    provider_api_key=row.api_key,
+                ):
+                    continue
+                if needs_multimodal and not _model_dict_supports_image(model):
+                    continue
+                model_id = str(model.get("id") or "").strip()
+                if not model_id:
+                    continue
+                raw_capacity = model.get("max_input_tokens") or model.get("context_window") or 0
+                try:
+                    capacity = max(0, int(raw_capacity))
+                except (TypeError, ValueError):
+                    capacity = 0
+                candidates.append(
+                    AutoRouteCandidate(
+                        ref=f"{row.name}/{model_id}",
+                        max_input_tokens=capacity,
+                    )
+                )
+        return candidates
 
     def build_harness_configs(self) -> list[ProviderConfig]:
         out: list[ProviderConfig] = []
@@ -301,6 +343,7 @@ class ProviderStore:
 
 
 __all__ = [
+    "AutoRouteCandidate",
     "KIND_TO_PROTOCOL",
     "ProviderStore",
     "clear_stale_pins_for_provider",

@@ -98,12 +98,17 @@ class ModelHealthRegistry:
         clock: Callable[[], float] = time.monotonic,
         base_cooldown_s: float = 60.0,
         max_cooldown_s: float = 900.0,
+        unknown_threshold: int = 3,
+        unknown_cooldown_s: float = 30.0,
     ) -> None:
         self._clock = clock
         self._base_cooldown_s = base_cooldown_s
         self._max_cooldown_s = max_cooldown_s
+        self._unknown_threshold = max(1, unknown_threshold)
+        self._unknown_cooldown_s = max(0.0, unknown_cooldown_s)
         self._models: dict[str, _OpenCircuit] = {}
         self._providers: dict[str, _OpenCircuit] = {}
+        self._unknown: dict[str, int] = {}
 
     @staticmethod
     def _provider(ref: str) -> str:
@@ -169,6 +174,7 @@ class ModelHealthRegistry:
             model_circuit = self._models.get(ref)
             if model_circuit is not None:
                 model_circuit.half_open_in_flight = False
+        self._unknown.pop(ref, None)
         circuits = self._providers if scope is FailureScope.PROVIDER else self._models
         key = provider if scope is FailureScope.PROVIDER else ref
         previous = circuits.get(key)
@@ -178,8 +184,30 @@ class ModelHealthRegistry:
             open_until=self._clock() + self._cooldown(failures),
         )
 
+    def record_unknown_failure(self, ref: str) -> None:
+        """Count one unclassified failure against *ref*.
+
+        Unknown errors get no failover and no typed cooldown, but a model
+        that keeps producing them (e.g. a WAF-blocked upstream returning
+        generic errors) must not be hammered forever: after
+        ``unknown_threshold`` consecutive unknown failures the model gets
+        a short circuit. Any success or typed failure resets the count.
+        """
+        count = self._unknown.get(ref, 0) + 1
+        if count < self._unknown_threshold:
+            self._unknown[ref] = count
+            return
+        self._unknown.pop(ref, None)
+        previous = self._models.get(ref)
+        failures = (previous.failures if previous is not None else 0) + 1
+        self._models[ref] = _OpenCircuit(
+            failures=failures,
+            open_until=self._clock() + self._unknown_cooldown_s,
+        )
+
     def record_success(self, ref: str) -> None:
         """Close model health state after a successful real call."""
+        self._unknown.pop(ref, None)
         self._models.pop(ref, None)
         provider = self._provider(ref)
         self._providers.pop(provider, None)

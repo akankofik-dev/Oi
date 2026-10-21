@@ -21,6 +21,7 @@ from oi.infra.agents.providers.health import (
     classify_model_failure,
 )
 from oi.infra.agents.providers.store import AutoRouteCandidate
+from oi.infra.agents.providers.quota import QuotaLedger
 from oi.infra.agents.settings.runtime_limits import CONFIGURABLE_MAX_INPUT_TOKENS
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ def _fits_context(
 def _is_rate_limit(exc: Exception) -> bool:
     """True when *exc* is a provider rate-limit (HTTP 429).
 
-    Primary signal is Octop's message-based classifier. Structured SDK
+    Primary signal is Oi's message-based classifier. Structured SDK
     errors whose message lacks "429" are covered by walking the cause chain
     for a ``status_code == 429`` attribute.
     """
@@ -90,8 +91,10 @@ class SafeModelFailoverMiddleware(AgentMiddleware[Any, Any]):
         max_delay: float,
         on_failure: Callable[[Exception], str] | Literal["error"] | None = None,
         max_models: int = 3,
+        quota: QuotaLedger | None = None,
     ) -> None:
         super().__init__()
+        self._quota = quota
         self._health = health
         self._candidates = candidates
         self._model_for_ref = model_for_ref
@@ -132,6 +135,7 @@ class SafeModelFailoverMiddleware(AgentMiddleware[Any, Any]):
             for candidate in self._candidates(current_ref, needs_multimodal)
             if candidate.ref != current_ref
             and self._health.is_routable(candidate.ref)
+            and (self._quota is None or self._quota.is_available(candidate.ref))
             and _fits_context(candidate, estimated, route_cap)
         ]
 
@@ -161,6 +165,10 @@ class SafeModelFailoverMiddleware(AgentMiddleware[Any, Any]):
         decision = classify_model_failure(exc)
         if decision.scope is not FailureScope.NONE:
             self._health.record_failure(ref, kind=decision.kind, scope=decision.scope)
+        elif decision.kind == "request_error":
+            self._health.record_unknown_failure(ref)
+        if self._quota is not None:
+            self._quota.learn_from_exception(ref, exc)
         return decision.failover
 
     def wrap_model_call(
@@ -178,6 +186,8 @@ class SafeModelFailoverMiddleware(AgentMiddleware[Any, Any]):
             routed = request if model is request.model else request.override(model=model)
             if automatic and ref and ref != current_ref:
                 _configurable(request)["model"] = ref
+            if self._quota is not None and ref:
+                self._quota.record_request(ref)
             try:
                 response = self._retry.wrap_model_call(routed, handler)
             except GraphBubbleUp:
@@ -214,6 +224,8 @@ class SafeModelFailoverMiddleware(AgentMiddleware[Any, Any]):
             routed = request if model is request.model else request.override(model=model)
             if automatic and ref and ref != current_ref:
                 _configurable(request)["model"] = ref
+            if self._quota is not None and ref:
+                self._quota.record_request(ref)
             try:
                 response = await self._retry.awrap_model_call(routed, handler)
             except GraphBubbleUp:
