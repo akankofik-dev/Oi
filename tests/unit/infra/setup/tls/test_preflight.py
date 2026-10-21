@@ -142,11 +142,11 @@ def test_preflight_fails_when_public_ip_unavailable():
         patch("oi.infra.setup.tls.preflight._fetch_public_ip", return_value=None),
         patch("oi.infra.setup.tls.preflight._resolve_domain_ips", return_value={_PUBLIC_IP}),
     ):
-        result = run_preflight("oi.example.com", cfg, locale="zh")
+        result = run_preflight("oi.example.com", cfg, locale="id")
     assert not result.ok
     check = next(c for c in result.checks if c.id == "public_ip")
     assert not check.ok
-    assert "公网 IP" in check.message
+    assert "IP publik" in check.message
 
 
 def test_preflight_dns_mismatch():

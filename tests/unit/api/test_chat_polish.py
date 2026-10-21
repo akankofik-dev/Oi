@@ -346,7 +346,7 @@ def test_is_offload_placeholder_block_rejects_unrelated_text() -> None:
 def test_serialize_history_message_drops_image_offload_placeholder_for_image_user() -> None:
     msg = HumanMessage(
         content=[
-            {"type": "text", "text": "用户发送了图片。"},
+            {"type": "text", "text": "Pengguna mengirim gambar."},
             {"type": "text", "text": _PLACEHOLDER_TEXT},
         ],
         additional_kwargs={
@@ -360,7 +360,7 @@ def test_serialize_history_message_drops_image_offload_placeholder_for_image_use
             ],
         },
     )
-    user = SimpleNamespace(locale="zh")
+    user = SimpleNamespace(locale="id")
     entry = _serialize_history_message(msg, user=user)
     assert entry is not None
     # Both the localized "User sent an image." sentinel and the offload
@@ -429,11 +429,11 @@ def test_serialize_history_message_drops_placeholder_for_en_locale() -> None:
     assert entry["content"] == []
 
 
-def test_strip_image_only_text_blocks_without_user_skips_zh_default() -> None:
-    """Locale falls back to ``zh`` when no user is supplied."""
+def test_strip_image_only_text_blocks_without_user_skips_id_default() -> None:
+    """Locale falls back to ``id`` when no user is supplied."""
     msg = HumanMessage(
         content=[
-            {"type": "text", "text": "用户发送了图片。"},
+            {"type": "text", "text": "Pengguna mengirim gambar."},
             {"type": "text", "text": _PLACEHOLDER_TEXT},
         ],
         additional_kwargs={
@@ -594,11 +594,11 @@ def test_serialize_history_splits_caption_from_stringified_image_ref() -> None:
 
 def test_strip_image_only_text_blocks_directly() -> None:
     blocks = [
-        {"type": "text", "text": "用户发送了图片。"},
+        {"type": "text", "text": "Pengguna mengirim gambar."},
         {"type": "text", "text": _PLACEHOLDER_TEXT},
         {"type": "text", "text": "你好"},
     ]
-    out = _strip_image_only_text_blocks(blocks, locale="zh")
+    out = _strip_image_only_text_blocks(blocks, locale="id")
     assert out == [{"type": "text", "text": "你好"}]
 
 

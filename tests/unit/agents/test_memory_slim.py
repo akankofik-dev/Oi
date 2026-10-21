@@ -199,7 +199,7 @@ def test_cli_prints_localized_progress_without_booting_another_host(tmp_path, mo
     monkeypatch.setattr(command, "list_orphan_agent_dirs", lambda *args, **kwargs: [])
     result = CliRunner().invoke(cli, ["memory", "slim", "--agent", "main"])
     assert result.exit_code == 0, result.output
-    assert "正在备份" in result.output and "2.00 → 1.00" in result.output
+    assert "Mencadangkan" in result.output and "2.00 -> 1.00" in result.output
 
 
 @pytest.mark.parametrize("phase", ["backing_up", "deduplicating", "compacting"])
@@ -306,7 +306,7 @@ def test_cli_selects_by_number_and_shows_counts(tmp_path, monkeypatch):
     assert "1. 同名助手  [first]" in result.output
     assert "2. 同名助手  [second]" in result.output
     assert "100/200" in result.output
-    assert "已用时 9 秒" in result.output
+    assert "Berjalan: 9s" in result.output
     assert "test failure" in result.output
 
 
@@ -350,8 +350,8 @@ def test_empty_discovery_exits_without_a_prompt(tmp_path, monkeypatch):
     monkeypatch.setattr(command, "list_memory_slim_agents", lambda *args, **kwargs: [])
     result = CliRunner().invoke(cli, ["memory", "slim"])
     assert result.exit_code == 1
-    assert "没有可在线整理" in result.output
-    assert "输入要整理" not in result.output
+    assert "Tidak ada agen SQLite yang memenuhi syarat" in result.output
+    assert "Pilih nomor untuk dipelihara" not in result.output
 
 
 def test_live_discovery_filters_unavailable_agents_without_opening_memory(tmp_path):
@@ -490,7 +490,7 @@ def test_cli_all_runs_sequentially_with_batch_progress(batch_cli, monkeypatch, j
         assert all(item["total_agents"] == 3 for item in updates)
     else:
         assert "[1/3]" in result.output and "[3/3]" in result.output
-        assert "共完成 3 个" in result.output
+        assert "Batch selesai: 3 agen dipelihara" in result.output
         assert all(f"{aid}.bak" in result.output for aid in completed)
 
 
@@ -537,7 +537,7 @@ def test_cli_all_rejects_explicit_agent(batch_cli, monkeypatch, args):
     monkeypatch.setattr(command, "request_memory_slim", forbidden)
     result = runner.invoke(cli, args)
     assert result.exit_code == 2
-    assert "--all 不能与 --agent" in result.output
+    assert "--all tidak dapat digabung dengan --agent" in result.output
 
 
 def test_cli_all_empty_list_does_not_start_job(batch_cli, monkeypatch):
@@ -550,7 +550,7 @@ def test_cli_all_empty_list_does_not_start_job(batch_cli, monkeypatch):
     monkeypatch.setattr(command, "request_memory_slim", forbidden)
     result = runner.invoke(cli, ["memory", "slim", "--all"])
     assert result.exit_code == 1
-    assert "没有可在线整理" in result.output
+    assert "Tidak ada agen SQLite yang memenuhi syarat" in result.output
 
 
 def chat_registry(registry):
@@ -703,28 +703,28 @@ def test_preview_reports_specific_ineligibility_without_starting(tmp_path, monke
             registry.get_agent = lambda _: SimpleNamespace(
                 _memory_runtime=SimpleNamespace(memory=SimpleNamespace(backend=backend))
             )
-            assert coordinator.preview_chat("a", 1, locale="zh") == [{"agent_id": "a", "name": "a"}]
+            assert coordinator.preview_chat("a", 1, locale="id") == [{"agent_id": "a", "name": "a"}]
             assert coordinator.task is None and not registry._history_backfills
             return
         elif reason == "disabled":
             registry.get_agent = lambda _: SimpleNamespace(
                 _memory_runtime=SimpleNamespace(memory=None)
             )
-            expected = "没有启用记忆库"
+            expected = "tidak mengaktifkan memori"
         elif reason == "stopped":
 
             def stopped(_):
                 raise OiError(ErrorCode.AGENT_NOT_RUNNING, "stopped")
 
             registry.get_agent = stopped
-            expected = "尚未启动"
+            expected = "tidak berjalan atau gagal dijalankan"
         else:
             monkeypatch.delattr(checkpoint_maintenance, "slim_live_checkpoints")
-            expected = "未提供在线整理接口"
+            expected = "tidak menyediakan pemeliharaan live"
             with pytest.raises(ValueError, match=expected):
-                coordinator.list_agents(locale="zh")
+                coordinator.list_agents(locale="id")
         with pytest.raises(ValueError, match=expected):
-            coordinator.preview_chat("a", 1, locale="zh")
+            coordinator.preview_chat("a", 1, locale="id")
         assert coordinator.task is None and not registry._history_backfills
         assert not list(tmp_path.glob("*.bak"))
     finally:

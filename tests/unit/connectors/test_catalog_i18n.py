@@ -14,43 +14,48 @@ from oi.infra.connectors.catalog import (
 def test_catalog_localizes_name_description_and_fields() -> None:
     entry = get_catalog_entry("weknora")
     assert entry is not None
-    zh = catalog_entry_to_dict(entry, locale="zh")
+    id_ = catalog_entry_to_dict(entry, locale="id")
     en = catalog_entry_to_dict(entry, locale="en")
-    assert zh["name"] == "WeKnora"
-    assert zh["description"] == "连接 WeKnora 私有知识库，提供只读检索与文档阅读"
+    assert id_["name"] == "WeKnora"
+    assert id_["description"] == (
+        "Hubungkan basis pengetahuan privat WeKnora, sediakan pencarian "
+        "baca-saja dan baca dokumen"
+    )
     assert en["description"] == (
         "Connect a private WeKnora knowledge base for read-only search and document reading"
     )
-    zh_fields = {item["key"]: item for item in zh["credential_fields"]}
+    id_fields = {item["key"]: item for item in id_["credential_fields"]}
     en_fields = {item["key"]: item for item in en["credential_fields"]}
-    assert zh_fields["base_url"]["label"] == "服务地址"
+    assert id_fields["base_url"]["label"] == "Alamat layanan"
     assert en_fields["base_url"]["label"] == "Service URL"
-    assert zh_fields["base_url"]["help"] == "未包含 /api/v1 时会自动补齐"
+    assert id_fields["base_url"]["help"] == (
+        "Otomatis dilengkapi jika belum mengandung /api/v1"
+    )
     assert "appends /api/v1" in str(en_fields["base_url"]["help"])
 
 
-def test_every_catalog_entry_has_en_and_zh_copy() -> None:
+def test_every_catalog_entry_has_en_and_id_copy() -> None:
     for entry in list_catalog():
         assert entry.name.en.strip()
-        assert entry.name.zh.strip()
+        assert entry.name.id.strip()
         assert entry.description.en.strip()
-        assert entry.description.zh.strip()
-        zh = catalog_entry_to_dict(entry, locale="zh")
+        assert entry.description.id.strip()
+        id_ = catalog_entry_to_dict(entry, locale="id")
         en = catalog_entry_to_dict(entry, locale="en")
-        assert zh["name"] == entry.name.zh
+        assert id_["name"] == entry.name.id
         assert en["name"] == entry.name.en
-        assert zh["description"] == entry.description.zh
+        assert id_["description"] == entry.description.id
         assert en["description"] == entry.description.en
         if entry.auth_hint is not None:
-            assert zh["auth_hint"] == entry.auth_hint.zh
+            assert id_["auth_hint"] == entry.auth_hint.id
             assert en["auth_hint"] == entry.auth_hint.en
         for field in entry.credential_fields:
             assert field.label.en.strip()
-            assert field.label.zh.strip()
+            assert field.label.id.strip()
 
 
 def _docs_catalog_table_rows(text: str) -> list[tuple[str, str, str, str, str, str]]:
-    header = "| Kind | Name | 名称 | Category | Auth | MCP mode |"
+    header = "| Kind | Name | Nama | Category | Auth | MCP mode |"
     start = text.find(header)
     assert start >= 0, "docs/connectors.md is missing the catalog table header"
     rows: list[tuple[str, str, str, str, str, str]] = []
@@ -72,7 +77,7 @@ def test_docs_catalog_table_matches_json() -> None:
         (
             entry.kind,
             entry.name.en,
-            entry.name.zh,
+            entry.name.id,
             entry.category,
             entry.auth_kind,
             entry.mcp_mode,

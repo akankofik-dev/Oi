@@ -17,7 +17,7 @@ def test_humanize_strips_init_hint() -> None:
     )
     assert "Bot ID" in msg or "Secret" in msg
     assert "wecom-cli" not in msg
-    assert "终端命令" in msg or "禁止" in msg
+    assert "Dilarang" in msg
 
 
 def test_humanize_passes_business_permission_errors() -> None:

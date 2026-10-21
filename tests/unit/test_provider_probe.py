@@ -142,10 +142,10 @@ async def test_chat_probe_maps_insufficient_balance() -> None:
         "oi.infra.agents.providers.probe.build_probe_chat_model",
         return_value=fake,
     ):
-        result = await probe_provider_row(row, model_id="gpt-4o-mini", locale="zh")
+        result = await probe_provider_row(row, model_id="gpt-4o-mini", locale="id")
 
     assert result["ok"] is False
-    assert "余额" in result["error"] or "额度" in result["error"]
+    assert "saldo" in result["error"] or "kuota" in result["error"]
     assert "402" not in result["error"]
     assert "Insufficient Balance" not in result["error"]
 

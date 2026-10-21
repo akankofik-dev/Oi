@@ -88,9 +88,9 @@ async def test_status_includes_version_and_model(ctx):
     text = "\n".join(sink.lines)
     assert "0.1.0" in text
     assert "openai/gpt-4o" in text
-    assert "会话状态" in text
+    assert "Status sesi" in text
     assert "a1" in text
-    assert "u（id=1）" in text
+    assert "u (id=1)" in text
     assert slash_ctx.paths is not None
     assert str(slash_ctx.paths.agent_workspace("a1")) in text
 

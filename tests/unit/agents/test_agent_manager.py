@@ -256,7 +256,7 @@ def test_apply_team_host_config_forces_async_ask_agent(manager: AgentManager) ->
     assert "ask_agent" not in disabled
     assert "agent_list" not in disabled
     assert out.bootstrap_enabled is False
-    assert "Host dispatch" in (out.system_prompt or "") or "主持人调度" in (out.system_prompt or "")
+    assert "Host dispatch" in (out.system_prompt or "") or "Dispatch host" in (out.system_prompt or "")
 
 
 def test_apply_expert_config_forces_sync_ask_agent(manager: AgentManager) -> None:
@@ -994,7 +994,7 @@ def test_build_harness_config_disables_bootstrap_for_team_host(manager: AgentMan
     assert cfg.bootstrap_enabled is False
     assert cfg.system_prompt is not None
     assert cfg.system_prompt.startswith("Team coordinator prompt")
-    assert "主持人调度" in cfg.system_prompt or "Host dispatch" in cfg.system_prompt
+    assert "Dispatch host" in cfg.system_prompt or "Host dispatch" in cfg.system_prompt
     assert cfg.memory is None
     assert cfg.skills_dir is None
 

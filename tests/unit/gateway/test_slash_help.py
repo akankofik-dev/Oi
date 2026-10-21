@@ -6,16 +6,16 @@ from oi.infra.gateway.slash.catalog import list_specs
 from oi.infra.gateway.slash.help import format_help
 
 
-def test_help_groups_by_category_zh():
-    text = format_help(list_specs(origin="ui"), "zh")
-    assert "**可用指令**" in text
-    assert "**核心命令**" in text
-    assert "**会话管理**" in text
-    assert "**系统**" in text
+def test_help_groups_by_category_id():
+    text = format_help(list_specs(origin="ui"), "id")
+    assert "**Perintah yang tersedia**" in text
+    assert "**Inti**" in text
+    assert "**Sesi**" in text
+    assert "**Sistem**" in text
     assert "`/status`" in text
     assert "`/help`" in text
     # Core section should appear before session section
-    assert text.index("核心命令") < text.index("会话管理")
+    assert text.index("Inti") < text.index("Sesi")
 
 
 def test_help_groups_by_category_en():

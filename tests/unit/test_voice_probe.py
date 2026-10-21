@@ -138,9 +138,9 @@ async def test_tencent_provider_error_is_reported_not_raised(
         "ok": False,
         "error": "SecretId was not found. Check that the key is correct.",
     }
-    assert await probe_tts(row, "tencent", locale="zh") == {
+    assert await probe_tts(row, "tencent", locale="id") == {
         "ok": False,
-        "error": "SecretId 不存在，请检查密钥是否填写正确。",
+        "error": "SecretId tidak ditemukan. Periksa bahwa kunci sudah benar.",
     }
 
 

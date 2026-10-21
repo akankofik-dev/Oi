@@ -45,10 +45,10 @@ async def test_registered_command_starts_owned_job_and_returns_ack(ctx, command,
         command, dispatcher=build_default_dispatcher(), ctx=ctx
     )
     assert handled
-    assert "已确认整理 2 个" in "\n".join(lines)
+    assert "Pemeliharaan dikonfirmasi untuk 2 agen" in "\n".join(lines)
     assert not actions
     ctx.agent_manager.memory_slim.start_chat.assert_called_once_with(
-        "mine", 1, all_agents=all_agents, locale="zh", remove_directories=False
+        "mine", 1, all_agents=all_agents, locale="id", remove_directories=False
     )
 
 
@@ -70,7 +70,7 @@ async def test_missing_or_disabled_user_cannot_start(ctx, user):
     handled, lines, _ = await try_handle_slash(
         "/memory slim", dispatcher=build_default_dispatcher(), ctx=ctx
     )
-    assert handled and "当前登录用户" in "\n".join(lines)
+    assert handled and "pengguna yang masuk" in "\n".join(lines)
     ctx.agent_manager.memory_slim.start_chat.assert_not_called()
 
 
@@ -111,7 +111,7 @@ async def test_memory_compact_confirm_runs_store(ctx, monkeypatch):
     handled, lines, _ = await try_handle_slash(
         "/memory compact --confirm", dispatcher=build_default_dispatcher(), ctx=ctx
     )
-    assert handled and "省下" in "\n".join(lines)
+    assert handled and "hemat" in "\n".join(lines)
     ctx.agent_manager.memory_slim.start_chat.assert_not_called()
 
 
@@ -123,7 +123,7 @@ async def test_unknown_arguments_show_usage_without_start(ctx, command):
     handled, lines, _ = await try_handle_slash(
         command, dispatcher=build_default_dispatcher(), ctx=ctx
     )
-    assert handled and "用法" in "\n".join(lines)
+    assert handled and "Penggunaan" in "\n".join(lines)
     ctx.agent_manager.memory_slim.start_chat.assert_not_called()
 
 
@@ -150,7 +150,7 @@ async def test_status_shows_counts_and_completion_without_restart(ctx):
     )
     text = "\n".join(lines)
     assert handled and "1/3" in text and "100/300" in text
-    assert "2.00 → 1.00" in text and "等待前一个" in text
+    assert "2.00 -> 1.00" in text and "Menunggu agen sebelumnya" in text
     ctx.agent_manager.memory_slim.start_chat.assert_not_called()
 
 
@@ -170,7 +170,7 @@ async def test_existing_agent_manager_context_runs_maintenance_command():
     ctx = build_slash_ctx(
         thread_registry=MagicMock(),
         agent_manager=manager,
-        user_repo=SimpleNamespace(get=lambda _: SimpleNamespace(disabled=0, locale="zh")),
+        user_repo=SimpleNamespace(get=lambda _: SimpleNamespace(disabled=0, locale="id")),
         agent_id="mine",
         user_id=1,
         channel_type="dashboard",
@@ -179,9 +179,9 @@ async def test_existing_agent_manager_context_runs_maintenance_command():
     handled, lines, _ = await try_handle_slash(
         "/memory slim --confirm", dispatcher=build_default_dispatcher(), ctx=ctx
     )
-    assert handled and "已确认整理 1 个" in "\n".join(lines)
+    assert handled and "Pemeliharaan dikonfirmasi untuk 1 agen" in "\n".join(lines)
     manager.memory_slim.start_chat.assert_called_once_with(
-        "mine", 1, all_agents=False, locale="zh", remove_directories=False
+        "mine", 1, all_agents=False, locale="id", remove_directories=False
     )
 
 
@@ -237,17 +237,17 @@ async def test_slim_explains_impact_and_requires_confirmation(ctx, suffix):
     )
     text = "\n".join(lines)
     assert handled
-    assert "尚未开始整理" in text and "所有会话会暂停发送" in text
+    assert "pemeliharaan belum dimulai" in text and "pengiriman dijeda di semua chat" in text
     assert "助手 [mine]" in text
     assert "/memory slim" + suffix + " --confirm" in text
     ctx.agent_manager.memory_slim.start_chat.assert_not_called()
     ctx.agent_manager.memory_slim.preview_chat.assert_called_once_with(
-        "mine", 1, all_agents=bool(suffix), locale="zh"
+        "mine", 1, all_agents=bool(suffix), locale="id"
     )
 
 
 @pytest.mark.parametrize("phase", ["inspecting", "cleaning", "done"])
-@pytest.mark.parametrize("locale", ["zh", "en"])
+@pytest.mark.parametrize("locale", ["id", "en"])
 def test_page_postgres_status_uses_namespace_cleanup_report(phase, locale):
     from oi.infra.gateway.slash.handlers.memory import _status_line
 
@@ -264,7 +264,7 @@ def test_page_postgres_status_uses_namespace_cleanup_report(phase, locale):
         assert "MB" not in text
 
 
-@pytest.mark.parametrize("locale", ["zh", "en"])
+@pytest.mark.parametrize("locale", ["id", "en"])
 def test_restore_status_does_not_expect_maintenance_file_statistics(locale):
     from oi.infra.gateway.slash.handlers.memory import _status_line
 

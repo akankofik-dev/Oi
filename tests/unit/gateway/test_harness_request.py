@@ -130,12 +130,12 @@ async def test_group_context_uses_anonymous_labels_instead_of_raw_ids() -> None:
         ),
     )
 
-    content = await build_content_from_message(msg, locale="zh")
+    content = await build_content_from_message(msg, locale="id")
 
     assert isinstance(content, str)
-    assert "【群聊背景｜仅供参考】" in content
-    assert "[群成员1] 这是之前的消息" in content
-    assert "【当前群消息｜请回复这条消息】" in content
-    assert "[群成员2] 你怎么看？" in content
+    assert "[Konteks grup | hanya untuk referensi]" in content
+    assert "[Anggota grup 1] 这是之前的消息" in content
+    assert "[Pesan grup saat ini | balas pesan ini]" in content
+    assert "[Anggota grup 2] 你怎么看？" in content
     assert "1468FCD" not in content
     assert "BD552189" not in content

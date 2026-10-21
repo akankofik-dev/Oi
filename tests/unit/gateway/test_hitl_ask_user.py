@@ -137,9 +137,9 @@ class TestCard:
         card = format_hitl_card(APPROVAL, pending_id="p1", locale="en")
         assert "command" in card
 
-    def test_zh_locale(self) -> None:
-        card = format_hitl_card(SINGLE_CHOICE, pending_id="p1", locale="zh")
-        assert "拍板" in card
+    def test_id_locale(self) -> None:
+        card = format_hitl_card(SINGLE_CHOICE, pending_id="p1", locale="id")
+        assert "keputusan" in card
 
     def test_im_card_shows_only_current_question(self) -> None:
         questions = _questions(THREE_QUESTIONS)

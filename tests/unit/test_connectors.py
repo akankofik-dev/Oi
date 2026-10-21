@@ -1041,9 +1041,9 @@ def test_meituan_travel_requires_query():
 def test_meituan_travel_probe_is_format_only():
     from oi.infra.connectors.gateway.adapters import meituan_travel
 
-    with pytest.raises(ValueError, match="格式"):
+    with pytest.raises(ValueError, match="Format"):
         meituan_travel.probe_credentials({"api_key": "short"})
-    with pytest.raises(ValueError, match="格式"):
+    with pytest.raises(ValueError, match="Format"):
         meituan_travel.probe_credentials({"api_key": "not-hex!!!!!!!!!!!"})
     meituan_travel.probe_credentials({"api_key": "a" * 32})
 

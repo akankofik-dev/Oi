@@ -53,16 +53,16 @@ def test_live_discord_status_and_localized_diagnostics(tmp_path):
     gateway._set_runtime_status("discord1", connected=True)
     channel.is_connected = False
     channel.runtime_error = "discord_disconnected"
-    state = gateway.runtime_status_to_dict("discord1", locale="zh")
+    state = gateway.runtime_status_to_dict("discord1", locale="id")
     assert state["connected"] is False
-    assert "重连" in state["error"]
+    assert "menyambung ulang" in state["error"]
     channel.is_connected = True
     channel.runtime_error = None
-    state = gateway.runtime_status_to_dict("discord1", locale="zh")
+    state = gateway.runtime_status_to_dict("discord1", locale="id")
     assert state["connected"] is True
     assert state["error"] is None
     assert "Message Content Intent" in Gateway._format_probe_error(
-        RuntimeError("discord_intents_required"), "zh"
+        RuntimeError("discord_intents_required"), "id"
     )
     assert "Bot Token" in Gateway._format_probe_error(RuntimeError("discord_invalid_token"), "en")
 

@@ -13,7 +13,7 @@ def test_resolve_binary_missing_does_not_suggest_npm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(cli_runner.shutil, "which", lambda _name: None)
-    with pytest.raises(ValueError, match="连接器") as ei:
+    with pytest.raises(ValueError, match="Konektor") as ei:
         cli_runner.resolve_binary("lark-cli")
     msg = str(ei.value)
     assert "npm install" not in msg

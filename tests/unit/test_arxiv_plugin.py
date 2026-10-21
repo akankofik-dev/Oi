@@ -261,7 +261,7 @@ async def test_empty_result_has_explicit_text(
     assert not payload["data"].get("silent")
 
 
-@pytest.mark.parametrize(("locale", "expected"), [("en", "Please provide"), ("zh-CN", "请提供")])
+@pytest.mark.parametrize(("locale", "expected"), [("en", "Please provide"), ("id", "Berikan")])
 async def test_runtime_locale_localizes_input_error(
     arxiv: ModuleType,
     monkeypatch: pytest.MonkeyPatch,
@@ -330,7 +330,7 @@ async def test_remote_failures_return_error_envelope(
     assert payload["data"]["error"]
 
 
-@pytest.mark.parametrize(("locale", "authors_label"), [("en", "Authors:"), ("zh", "作者：")])
+@pytest.mark.parametrize(("locale", "authors_label"), [("en", "Authors:"), ("id", "Penulis:")])
 async def test_globally_enabled_plugin_is_callable_without_agent_opt_in(
     monkeypatch: pytest.MonkeyPatch,
     locale: str,

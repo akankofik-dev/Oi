@@ -35,7 +35,7 @@ def _processor(*, thread: SimpleNamespace | None) -> GlobalProcessor:
         audit_repo=MagicMock(),
         agent_repo=MagicMock(get=MagicMock(return_value=MagicMock(default_model=None))),
         user_repo=MagicMock(
-            get=MagicMock(return_value=SimpleNamespace(locale="zh", preferences_json=None))
+            get=MagicMock(return_value=SimpleNamespace(locale="id", preferences_json=None))
         ),
         connector_repo=MagicMock(),
         dispatcher=SlashDispatcher(),
@@ -80,7 +80,7 @@ async def test_dashboard_execute_overwrites_user_text() -> None:
         thread_id="thr",
         meta={},
     )
-    assert request["messages"][0]["content"] == "请按 plans/foo.md 执行"
+    assert request["messages"][0]["content"] == "Jalankan plans/foo.md"
     assert request["conversation_mode"] == "craft"
     processor._thread_registry.update_composer.assert_called_once_with(
         "thr",

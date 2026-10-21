@@ -29,7 +29,7 @@ def test_oi_error_to_envelope():
 
 def test_oi_error_to_envelope_localized():
     err = OiError(ErrorCode.TOKEN_EXPIRED, "token expired")
-    assert err.to_envelope(locale="zh")["error"]["message"] == "登录已过期，请重新登录。"
+    assert err.to_envelope(locale="id")["error"]["message"] == "Sesi kedaluwarsa. Silakan masuk lagi."
 
 
 def test_unknown_error_code_rejected():

@@ -72,9 +72,11 @@ def test_set_locale_persists(db: SqlitePool):
 
 def test_resolve_locale_prefers_user_setting():
     assert resolve_locale(user_locale="en", channel_type="feishu") == "en"
-    assert resolve_locale(user_locale="zh", channel_type="telegram") == "zh"
+    assert resolve_locale(user_locale="id", channel_type="telegram") == "id"
 
 
 def test_normalize_locale_bcp47():
-    assert normalize_locale("zh-CN") == "zh"
+    assert normalize_locale("id-ID") == "id"
     assert normalize_locale("en-US") == "en"
+    # zh was removed as a supported locale: it resolves to the default (id).
+    assert normalize_locale("zh-CN") == "id"

@@ -828,7 +828,7 @@ async def test_dashboard_error_keeps_partial_tokens_and_error(archive):
     error = next(
         message for message in recovered if message.additional_kwargs.get("oi_stream_error")
     )
-    assert "余额" in str(error.content) or "insufficient" in str(error.content).lower()
+    assert "saldo" in str(error.content) or "insufficient" in str(error.content).lower()
     assert archive.store.turn("t")["status"] == "failed"
 
 

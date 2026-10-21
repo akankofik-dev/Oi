@@ -262,7 +262,7 @@ async def test_cmd_compact_nothing_to_compact(ctx, dispatcher) -> None:
     sink = BufferSink()
     await cmd_compact(dispatcher, SlashCommand("compact", ""), ctx, sink)
     text = "\n".join(sink.lines)
-    assert "无可压缩" in text or "Nothing to compact" in text
+    assert "Tidak ada yang perlu dipadatkan" in text or "Nothing to compact" in text
 
 
 @pytest.mark.asyncio
@@ -282,5 +282,5 @@ async def test_cmd_compact_unavailable_reason(ctx, dispatcher) -> None:
     sink = BufferSink()
     await cmd_compact(dispatcher, SlashCommand("compact", ""), ctx, sink)
     text = "\n".join(sink.lines)
-    assert "不可用" in text or "unavailable" in text.lower()
+    assert "tidak tersedia" in text.lower() or "unavailable" in text.lower()
     assert "graph not ready" not in text

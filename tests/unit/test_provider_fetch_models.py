@@ -98,7 +98,7 @@ async def test_fetch_models_auth_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_models_insufficient_balance_zh() -> None:
+async def test_fetch_models_insufficient_balance_id() -> None:
     response = _mock_response(402, {"error": {"message": "Insufficient Balance"}})
     mock_client = AsyncMock()
     mock_client.get = AsyncMock(return_value=response)
@@ -109,11 +109,11 @@ async def test_fetch_models_insufficient_balance_zh() -> None:
         result = await fetch_openai_compatible_models(
             base_url="https://api.example.com/v1",
             api_key="sk-test",
-            locale="zh",
+            locale="id",
         )
 
     assert result["ok"] is False
-    assert "余额" in result["error"] or "额度" in result["error"]
+    assert "saldo" in result["error"] or "kuota" in result["error"]
     assert "402" not in result["error"]
 
 

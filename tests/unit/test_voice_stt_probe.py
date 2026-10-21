@@ -117,9 +117,9 @@ async def test_provider_error_is_reported_not_raised(monkeypatch: pytest.MonkeyP
         "ok": False,
         "error": "This Tencent Cloud voice service is not enabled for the account.",
     }
-    assert await probe_stt(row, "tencent", locale="zh") == {
+    assert await probe_stt(row, "tencent", locale="id") == {
         "ok": False,
-        "error": "当前腾讯云账号尚未开通该语音服务。",
+        "error": "Layanan suara Tencent Cloud ini belum diaktifkan untuk akun tersebut.",
     }
 
 

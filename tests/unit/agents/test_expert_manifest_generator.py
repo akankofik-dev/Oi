@@ -160,8 +160,8 @@ def test_normalize_manifest_assets_roleizes_fallback_label() -> None:
         fallback_summary_en="Generate test plans",
     )
 
-    assert assets["label"] == {"zh": "自动化测试专家", "en": "Test Automation Expert"}
-    assert assets["description"] == {"zh": "自动生成测试方案", "en": "Generate test plans"}
+    assert assets["label"] == {"zh": "自动化测试专家", "en": "Test Automation Expert", "id": "Ahli"}
+    assert assets["description"] == {"zh": "自动生成测试方案", "en": "Generate test plans", "id": "Workflow ahli untuk Ahli."}
 
 
 def test_normalize_manifest_assets_keeps_at_most_six_quick_prompts() -> None:
