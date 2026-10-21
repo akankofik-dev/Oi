@@ -5,20 +5,18 @@ Asisten AI self-hosted yang lebih pintar — multi-user, multi-agent. Dashboard 
 ## Install
 
 ```bash
-git clone https://github.com/akankofik-dev/Oi.git
-cd Oi
-bash install-oi.sh
+curl -sSL https://raw.githubusercontent.com/akankofik-dev/Oi/main/install-oi.sh | bash
 ```
 
 Itu aja. Script-nya otomatis: install Python 3.12+ → bikin venv → install semua dependency → jalanin server di `http://127.0.0.1:8088`.
 
-Kenapa `git clone` (bukan `curl | bash`)? Biar jalan di semua mesin — nggak butuh `curl`, dan selalu narik kode terbaru (nggak kena cache CDN).
-
-Untuk akses dari luar (VPS), ganti baris terakhir jadi:
+Untuk akses dari luar (VPS):
 
 ```bash
-OI_HOST=0.0.0.0 bash install-oi.sh
+curl -sSL https://raw.githubusercontent.com/akankofik-dev/Oi/main/install-oi.sh | OI_HOST=0.0.0.0 bash
 ```
+
+Buat pengembang yang mau pegang kodenya, alternatifnya `git clone https://github.com/akankofik-dev/Oi.git` lalu `bash install-oi.sh` dari folder clone.
 
 ## Akses dari Luar
 
